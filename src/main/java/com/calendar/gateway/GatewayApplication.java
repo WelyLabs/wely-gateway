@@ -18,18 +18,34 @@ public class GatewayApplication {
         return builder.routes()
                 .route("calendar-users-api", r -> r
                         .path("/api/v1/user-service/**")
+                        .filters(f -> f
+                                .stripPrefix(2)
+                                .retry(3)
+                        )
                         .uri("http://localhost:8082")
                 )
                 .route("calendar-social-api", r -> r
                         .path("/api/v1/social-service/**")
+                        .filters(f -> f
+                                .stripPrefix(2)
+                                .retry(3)
+                        )
                         .uri("http://localhost:8083")
                 )
                 .route("calendar-chat-api", r -> r
                         .path("/api/v1/chat-service/**")
+                        .filters(f -> f
+                                .stripPrefix(2)
+                                .retry(3)
+                        )
                         .uri("http://localhost:8084")
                 )
                 .route("chat-rsocket-route", r -> r
                         .path("/rsocket/**")
+                        .filters(f -> f
+                                .stripPrefix(2)
+                                .retry(3)
+                        )
                         .uri("ws://localhost:8084"))
                 .build();
     }
