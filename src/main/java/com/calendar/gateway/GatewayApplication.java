@@ -1,5 +1,6 @@
 package com.calendar.gateway;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.gateway.route.RouteLocator;
@@ -9,44 +10,40 @@ import org.springframework.context.annotation.Bean;
 @SpringBootApplication
 public class GatewayApplication {
 
-    public static void main(String[] args) {
-		SpringApplication.run(GatewayApplication.class, args);
-	}
+        @Value("${users.api.url}")
+        private String USERS_API_URL;
 
-	@Bean
-    public RouteLocator configureRoute(RouteLocatorBuilder builder) {
-        return builder.routes()
-                .route("calendar-users-api", r -> r
-                        .path("/api/v1/user-service/**")
-                        .filters(f -> f
-                                .stripPrefix(2)
-                                .retry(3)
-                        )
-                        .uri("http://localhost:8082")
-                )
-                .route("calendar-social-api", r -> r
-                        .path("/api/v1/social-service/**")
-                        .filters(f -> f
-                                .stripPrefix(2)
-                                .retry(3)
-                        )
-                        .uri("http://localhost:8083")
-                )
-                .route("calendar-chat-api", r -> r
-                        .path("/api/v1/chat-service/**")
-                        .filters(f -> f
-                                .stripPrefix(2)
-                                .retry(3)
-                        )
-                        .uri("http://localhost:8084")
-                )
-                .route("chat-rsocket-route", r -> r
-                        .path("/rsocket/**")
-                        .filters(f -> f
-                                .stripPrefix(2)
-                                .retry(3)
-                        )
-                        .uri("ws://localhost:8084"))
-                .build();
-    }
+        public static void main(String[] args) {
+                SpringApplication.run(GatewayApplication.class, args);
+        }
+
+        @Bean
+        public RouteLocator configureRoute(RouteLocatorBuilder builder) {
+                return builder.routes()
+                                .route("calendar-users-api", r -> r
+                                                .path("/api/v1/user-service/**")
+                                                .filters(f -> f
+                                                                .stripPrefix(2)
+                                                                .retry(3))
+                                                .uri(USERS_API_URL))
+                                .route("calendar-social-api", r -> r
+                                                .path("/api/v1/social-service/**")
+                                                .filters(f -> f
+                                                                .stripPrefix(2)
+                                                                .retry(3))
+                                                .uri("http://localhost:8083"))
+                                .route("calendar-chat-api", r -> r
+                                                .path("/api/v1/chat-service/**")
+                                                .filters(f -> f
+                                                                .stripPrefix(2)
+                                                                .retry(3))
+                                                .uri("http://localhost:8084"))
+                                .route("chat-rsocket-route", r -> r
+                                                .path("/rsocket/**")
+                                                .filters(f -> f
+                                                                .stripPrefix(2)
+                                                                .retry(3))
+                                                .uri("ws://localhost:8084"))
+                                .build();
+        }
 }
