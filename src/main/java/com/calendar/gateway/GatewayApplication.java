@@ -13,6 +13,15 @@ public class GatewayApplication {
         @Value("${users.api.url}")
         private String USERS_API_URL;
 
+        @Value("${social.api.url}")
+        private String SOCIAL_API_URL;
+
+        @Value("${chat.api.url}")
+        private String CHAT_API_URL;
+
+        @Value("${chat.rsocket.url}")
+        private String CHAT_RSOCKET_URL;
+
         public static void main(String[] args) {
                 SpringApplication.run(GatewayApplication.class, args);
         }
@@ -31,19 +40,18 @@ public class GatewayApplication {
                                                 .filters(f -> f
                                                                 .stripPrefix(2)
                                                                 .retry(3))
-                                                .uri("http://localhost:8083"))
+                                                .uri(SOCIAL_API_URL))
                                 .route("calendar-chat-api", r -> r
                                                 .path("/api/v1/chat-service/**")
                                                 .filters(f -> f
                                                                 .stripPrefix(2)
                                                                 .retry(3))
-                                                .uri("http://localhost:8084"))
+                                                .uri(CHAT_API_URL))
                                 .route("chat-rsocket-route", r -> r
-                                                .path("/rsocket/**")
+                                                .path("/rsocket/**", "/rsocket")
                                                 .filters(f -> f
-                                                                .stripPrefix(2)
                                                                 .retry(3))
-                                                .uri("ws://localhost:8084"))
+                                                .uri(CHAT_RSOCKET_URL))
                                 .build();
         }
 }
