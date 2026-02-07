@@ -52,10 +52,13 @@ public class WebFluxSecurityConfig {
         return jwtDecoder;
     }
 
+    @Value("${cors.allowed.origin}")
+    private String corsAllowedOrigin;
+
     @Bean
     public CorsWebFilter corsFilter() {
         CorsConfiguration config = new CorsConfiguration();
-        config.addAllowedOrigin("http://localhost:4200");
+        config.addAllowedOrigin(corsAllowedOrigin);
         config.addAllowedHeader("*");
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
