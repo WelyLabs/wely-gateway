@@ -1,6 +1,6 @@
 package com.calendar.gateway;
 
-import com.calendar.gateway.infrastructure.filters.IdentityTranslatorGatewayFilterFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.gateway.route.RouteLocator;
@@ -21,6 +21,9 @@ public class GatewayApplication {
 
         @Value("${chat.rsocket.url}")
         private String CHAT_RSOCKET_URL;
+
+        @Value("${media.api.url}")
+        private String MEDIA_API_URL;
 
         public static void main(String[] args) {
                 SpringApplication.run(GatewayApplication.class, args);
@@ -56,9 +59,8 @@ public class GatewayApplication {
                                                 .path("/api/v1/media-service/**")
                                                 .filters(f -> f
                                                                 .stripPrefix(2)
-                                                                .retry(3)
-                                        )
-                                        .uri("http://localhost:8085"))
+                                                                .retry(3))
+                                                .uri(MEDIA_API_URL))
                                 .build();
         }
 }
