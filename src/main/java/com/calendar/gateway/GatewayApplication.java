@@ -22,6 +22,9 @@ public class GatewayApplication {
         @Value("${chat.rsocket.url}")
         private String CHAT_RSOCKET_URL;
 
+        @Value("${media.api.url}")
+        private String MEDIA_API_URL;
+
         public static void main(String[] args) {
                 SpringApplication.run(GatewayApplication.class, args);
         }
@@ -52,6 +55,12 @@ public class GatewayApplication {
                                                 .filters(f -> f
                                                                 .retry(3))
                                                 .uri(CHAT_RSOCKET_URL))
+                                .route("calendar-media-api", r -> r
+                                                .path("/api/v1/media-service/**")
+                                                .filters(f -> f
+                                                                .stripPrefix(2)
+                                                                .retry(3))
+                                                .uri(MEDIA_API_URL))
                                 .build();
         }
 }
