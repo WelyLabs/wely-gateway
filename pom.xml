@@ -29,6 +29,15 @@
 	<properties>
 		<java.version>25</java.version>
 		<spring-cloud.version>2025.1.0</spring-cloud.version>
+		<!-- SonarCloud properties -->
+		<sonar.projectKey>WelyLabs_wely-gateway</sonar.projectKey>
+		<sonar.projectName>wely-gateway</sonar.projectName>
+		<sonar.organization>welylabs</sonar.organization>
+		<sonar.host.url>https://sonarcloud.io</sonar.host.url>
+		<!-- JaCoCo properties for Sonar -->
+		<sonar.java.binaries>${project.build.directory}/classes</sonar.java.binaries>
+		<sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+		<build.dir>target</build.dir>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -73,6 +82,11 @@
 			<artifactId>reactor-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 	<dependencyManagement>
 		<dependencies>
@@ -87,7 +101,60 @@
 	</dependencyManagement>
 
 	<build>
+		<directory>${build.dir}</directory>
 		<plugins>
+			<plugin>
+				<groupId>org.sonarsource.scanner.maven</groupId>
+				<artifactId>sonar-maven-plugin</artifactId>
+				<version>4.0.0.4121</version>
+			</plugin>
+
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>0.8.13</version>
+				<configuration>
+					<excludes>
+						<exclude>com/calendar/gateway/GatewayApplication.class</exclude>
+						<exclude>com/calendar/gateway/configuration/**</exclude>
+					</excludes>
+				</configuration>
+				<executions>
+					<execution>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>report</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>check</id>
+						<goals>
+							<goal>check</goal>
+						</goals>
+						<configuration>
+							<rules>
+								<rule>
+									<element>BUNDLE</element>
+									<limits>
+										<limit>
+											<counter>LINE</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>1.00</minimum>
+										</limit>
+									</limits>
+								</rule>
+							</rules>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
@@ -96,6 +163,7 @@
 						<path>
 							<groupId>org.projectlombok</groupId>
 							<artifactId>lombok</artifactId>
+							<version>1.18.40</version>
 						</path>
 					</annotationProcessorPaths>
 				</configuration>
@@ -114,5 +182,19 @@
 			</plugin>
 		</plugins>
 	</build>
+
+	<profiles>
+		<profile>
+			<id>local-isolation</id>
+			<activation>
+				<property>
+					<name>!env.CI</name>
+				</property>
+			</activation>
+			<properties>
+				<build.dir>target-maven</build.dir>
+			</properties>
+		</profile>
+	</profiles>
 
 </project>
