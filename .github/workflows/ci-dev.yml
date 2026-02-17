@@ -35,12 +35,16 @@ jobs:
       - name: Build and analyze
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           chmod +x mvnw
-          ./mvnw -B clean verify sonar:sonar \
-            -Dsonar.token=${{ secrets.SONAR_TOKEN }} \
-            -Dsonar.branch.name=${{ github.ref_name }} \
-            -Dsonar.qualitygate.wait=true
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            ./mvnw -B clean verify sonar:sonar \
+              -Dsonar.token=$SONAR_TOKEN \
+              -Dsonar.qualitygate.wait=true
+          else
+            ./mvnw -B clean verify
+          fi
 
   push:
     needs: build
