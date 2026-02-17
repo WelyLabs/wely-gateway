@@ -25,6 +25,9 @@ public class GatewayApplication {
         @Value("${media.api.url}")
         private String MEDIA_API_URL;
 
+        @Value("${events.api.url}")
+        private String EVENTS_API_URL;
+
         public static void main(String[] args) {
                 SpringApplication.run(GatewayApplication.class, args);
         }
@@ -61,6 +64,12 @@ public class GatewayApplication {
                                                                 .stripPrefix(2)
                                                                 .retry(3))
                                                 .uri(MEDIA_API_URL))
+                                .route("calendar-events-api", r -> r
+                                                .path("/api/v1/events-service/**")
+                                                .filters(f -> f
+                                                                .stripPrefix(2)
+                                                                .retry(3))
+                                                .uri(EVENTS_API_URL))
                                 .build();
         }
 }
