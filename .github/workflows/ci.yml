@@ -138,9 +138,11 @@ jobs:
           context: .
           push: true
           tags: >-
-            ${{ github.ref == 'refs/heads/main' && 
-            format('ghcr.io/{0}/wely-gateway:latest,ghcr.io/{0}/wely-gateway:{1}', steps.lower.outputs.owner, steps.version.outputs.new_release_version) ||
-            format('ghcr.io/{0}/wely-gateway:sha-{1}', steps.lower.outputs.owner, github.sha) }}
+            ${{ github.ref == 'refs/heads/main' && (
+              steps.version.outputs.new_release_published == 'true' && 
+              format('ghcr.io/{0}/wely-gateway:latest,ghcr.io/{0}/wely-gateway:{1}', steps.lower.outputs.owner, steps.version.outputs.new_release_version) ||
+              format('ghcr.io/{0}/wely-gateway:latest', steps.lower.outputs.owner)
+            ) || format('ghcr.io/{0}/wely-gateway:sha-{1}', steps.lower.outputs.owner, github.sha) }}
 
       - name: Create GitHub Release
         if: github.ref == 'refs/heads/main' && steps.version.outputs.new_release_published == 'true' && steps.docker.outcome == 'success'
