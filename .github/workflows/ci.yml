@@ -46,11 +46,13 @@ jobs:
         run: |
           chmod +x mvnw
           ./mvnw -B test jacoco:report
-      - name: Upload coverage
+      - name: Upload coverage and classes
         uses: actions/upload-artifact@v4
         with:
-          name: coverage
-          path: target/site/jacoco/
+          name: target
+          path: |
+            target/site/jacoco/
+            target/classes/
           retention-days: 1
 
   analyze:
@@ -68,11 +70,11 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
           cache: 'maven'
-      - name: Download coverage
+      - name: Download coverage and classes
         uses: actions/download-artifact@v4
         with:
-          name: coverage
-          path: target/site/jacoco/
+          name: target
+          path: target/
       - name: SonarCloud Scan
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
