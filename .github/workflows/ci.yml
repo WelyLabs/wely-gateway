@@ -91,6 +91,7 @@ jobs:
     name: Release
     needs: [test, analyze]
     if: |
+      always() &&
       github.event_name == 'push' && 
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') &&
       needs.test.result == 'success' &&
