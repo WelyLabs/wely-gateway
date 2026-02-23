@@ -89,8 +89,12 @@ jobs:
 
   release:
     name: Release
-    needs: analyze
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    needs: [test, analyze]
+    if: |
+      github.event_name == 'push' && 
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') &&
+      needs.test.result == 'success' &&
+      (needs.analyze.result == 'success' || needs.analyze.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
