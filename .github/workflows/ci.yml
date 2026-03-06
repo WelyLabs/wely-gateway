@@ -168,4 +168,5 @@ jobs:
     uses: ./.github/workflows/cd.yml
     with:
       image_tag: ${{ github.ref == 'refs/heads/main' && 'latest' || format('sha-{0}', github.sha) }}
+      environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
     secrets: inherit
