@@ -1,0 +1,53 @@
+name: CD
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag to deploy'
+        required: true
+        type: string
+      environment:
+        description: 'Target environment'
+        required: true
+        type: string
+        default: 'dev'
+  workflow_call:
+    inputs:
+      image_tag:
+        description: 'Docker image tag to deploy'
+        required: true
+        type: string
+      environment:
+        description: 'Target environment'
+        required: true
+        type: string
+
+jobs:
+  update-infra:
+    name: Update Infra Manifest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Infra Repo
+        uses: actions/checkout@v4
+        with:
+          repository: WelyLabs/wely-gitops-infra
+          token: ${{ secrets.INFRA_REPO_TOKEN }}
+          path: infra
+
+      - name: Update Image Tag
+        run: |
+          cd infra/overlays/${{ inputs.environment }}
+          kustomize edit set image ghcr.io/welylabs/wely-gateway=ghcr.io/welylabs/wely-gateway:${{ inputs.image_tag }}
+
+      - name: Commit and Push
+        run: |
+          cd infra
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add overlays/${{ inputs.environment }}/kustomization.yaml
+            git commit -m "deploy(${{ inputs.environment }}): update wely-gateway to ${{ inputs.image_tag }}"
+            git push
+          else
+            echo "No changes to commit"
+          fi
