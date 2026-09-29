@@ -18,7 +18,7 @@ import static org.springframework.security.test.web.reactive.server.SecurityMock
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
-class SecurityConfigTest {
+class WebFluxSecurityConfigTest {
 
     private WebTestClient webTestClient;
 
