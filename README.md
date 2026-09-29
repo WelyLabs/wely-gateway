@@ -42,11 +42,11 @@ Java 25 · Spring Boot 4 · **Spring Cloud Gateway** (WebFlux) · OAuth2 Resourc
 
 | Route entrante | Cible | Transformation |
 |---|---|---|
-| `/api/v1/user-service/**` | users-api | `stripPrefix(2)` + `retry(3)` |
-| `/api/v1/social-service/**` | social-api | `stripPrefix(2)` + `retry(3)` |
-| `/api/v1/chat-service/**` | chat-api | `stripPrefix(2)` + `retry(3)` |
-| `/api/v1/events-service/**` | events-api | `stripPrefix(2)` + `retry(3)` |
-| `/rsocket`, `/rsocket/**` | chat-api (WebSocket) | `retry(3)` |
+| `/api/v1/user-service/**` | calendar-users-api | `stripPrefix(2)` + `retry(3)` |
+| `/api/v1/social-service/**` | calendar-social-api | `stripPrefix(2)` + `retry(3)` |
+| `/api/v1/chat-service/**` | calendar-chat-api | `stripPrefix(2)` + `retry(3)` |
+| `/api/v1/events-service/**` | calendar-events-api | `stripPrefix(2)` + `retry(3)` |
+| `/rsocket`, `/rsocket/**` | calendar-chat-api (WebSocket) | `retry(3)` |
 
 ### Le double préfixe
 
@@ -68,7 +68,7 @@ Conséquence : **un service répond sur le même chemin qu'il soit appelé via l
 
 ### Le cas RSocket
 
-RSocket over WebSocket n'est pas du HTTP requête/réponse : la gateway relaie la connexion sans l'interpréter, et l'authentification est déléguée à `chat-api`, qui valide le JWT transmis dans la métadonnée d'authentification RSocket à chaque payload.
+RSocket over WebSocket n'est pas du HTTP requête/réponse : la gateway relaie la connexion sans l'interpréter, et l'authentification est déléguée à `calendar-chat-api`, qui valide le JWT transmis dans la métadonnée d'authentification RSocket à chaque payload.
 
 ---
 
@@ -79,7 +79,7 @@ RSocket over WebSocket n'est pas du HTTP requête/réponse : la gateway relaie l
 .cors(Customizer.withDefaults())
 .authorizeExchange(exchanges -> exchanges
         .pathMatchers(HttpMethod.OPTIONS).permitAll()   // préflight
-        .pathMatchers("/rsocket/**").permitAll()        // auth déléguée à chat-api
+        .pathMatchers("/rsocket/**").permitAll()        // auth déléguée à calendar-chat-api
         .pathMatchers("/public/**").permitAll()
         .anyExchange().authenticated())
 .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
@@ -118,11 +118,11 @@ Une seule origine autorisée, injectée par l'environnement (`CORS_ALLOWED_ORIGI
 
 | Variable | Description |
 |---|---|
-| `USERS_API_URL` | URL interne de users-api |
-| `SOCIAL_API_URL` | URL interne de social-api |
-| `CHAT_API_URL` | URL interne de chat-api |
-| `CHAT_RSOCKET_URL` | URL WebSocket de chat-api (`ws://…`) |
-| `EVENTS_API_URL` | URL interne de events-api |
+| `USERS_API_URL` | URL interne de calendar-users-api |
+| `SOCIAL_API_URL` | URL interne de calendar-social-api |
+| `CHAT_API_URL` | URL interne de calendar-chat-api |
+| `CHAT_RSOCKET_URL` | URL WebSocket de calendar-chat-api (`ws://…`) |
+| `EVENTS_API_URL` | URL interne de calendar-events-api |
 | `CORS_ALLOWED_ORIGIN` | Origine autorisée (défaut : `https://web.welylabs.app`) |
 | `KEYCLOAK_ISSUER_URI` | Issuer public |
 | `KEYCLOAK_INTERNAL_JWK_SET_URI` | JWKS interne |
