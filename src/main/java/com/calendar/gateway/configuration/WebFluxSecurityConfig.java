@@ -37,6 +37,9 @@ public class WebFluxSecurityConfig {
                 .cors(Customizer.withDefaults())
                 .authorizeExchange(exchanges -> exchanges
                         .pathMatchers(HttpMethod.OPTIONS).permitAll()
+                        // Probes Kubernetes : le kubelet n'a pas de token. Seuls les deux
+                        // groupes de santé sont ouverts, pas /actuator dans son ensemble.
+                        .pathMatchers("/actuator/health/liveness", "/actuator/health/readiness").permitAll()
                         .pathMatchers("/rsocket/**").permitAll()
                         .pathMatchers("/public/**").permitAll()
                         .anyExchange().authenticated())
