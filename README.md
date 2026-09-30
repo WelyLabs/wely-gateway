@@ -17,7 +17,7 @@ La gateway est le **seul composant exposé publiquement**. Les services métier 
 
 ## Stack
 
-Java 25 · Spring Boot 4 · **Spring Cloud Gateway** (WebFlux) · OAuth2 Resource Server
+Java 25 · Spring Boot 4 · **Spring Cloud Gateway** (WebFlux) · OAuth2 Resource Server · Resilience4j · Redis
 
 ---
 
@@ -30,8 +30,10 @@ Java 25 · Spring Boot 4 · **Spring Cloud Gateway** (WebFlux) · OAuth2 Resourc
       │  /api/v1/**           │                              │
       ├──────────────────────▶│  1. CORS                     │
       │  /rsocket             │  2. validation JWT           │
-      │                       │  3. stripPrefix(2)           │
-      └──────────────────────▶│  4. routage + retry          │
+      │                       │  3. quota par appelant       │
+      │                       │  4. circuit breaker          │
+      │                       │  5. stripPrefix(2)           │
+      └──────────────────────▶│  6. routage + retry          │
                               └──────────────┬───────────────┘
                                              │
         ┌──────────────┬───────────────┬─────┴─────────┬──────────────┐
@@ -40,13 +42,45 @@ Java 25 · Spring Boot 4 · **Spring Cloud Gateway** (WebFlux) · OAuth2 Resourc
       :8082          :8083           :8084           :8086          :8084
 ```
 
-| Route entrante | Cible | Transformation |
+| Route entrante | Cible | Filtres |
 |---|---|---|
-| `/api/v1/user-service/**` | wely-users | `stripPrefix(2)` + `retry(3)` |
-| `/api/v1/social-service/**` | wely-social | `stripPrefix(2)` + `retry(3)` |
-| `/api/v1/chat-service/**` | wely-chat | `stripPrefix(2)` + `retry(3)` |
-| `/api/v1/events-service/**` | wely-events | `stripPrefix(2)` + `retry(3)` |
-| `/rsocket`, `/rsocket/**` | wely-chat (WebSocket) | `retry(3)` |
+| `/api/v1/user-service/**` | wely-users | quota · breaker · `stripPrefix(2)` · `retry(3)` |
+| `/api/v1/social-service/**` | wely-social | quota · breaker · `stripPrefix(2)` · `retry(3)` |
+| `/api/v1/chat-service/**` | wely-chat | quota · breaker · `stripPrefix(2)` · `retry(3)` |
+| `/api/v1/events-service/**` | wely-events | quota · breaker · `stripPrefix(2)` · `retry(3)` |
+| `/rsocket`, `/rsocket/**` | wely-chat (WebSocket) | *aucun* |
+
+L'ordre des filtres n'est pas arbitraire. Le quota passe **avant** le breaker : un appelant qui
+inonde la gateway est refoulé avant qu'on touche à quoi que ce soit en aval, budget d'échec du
+breaker compris. Les `retry` se produisent **à l'intérieur** du breaker, donc une route réellement
+tombée le fait déclencher plus tôt — c'est le comportement souhaitable.
+
+La route RSocket ne porte aucun des trois, et c'est délibéré : tous comptent des requêtes, or un
+WebSocket est **une** requête qui vit ensuite le temps de l'onglet. Un quota y plafonnerait le
+nombre d'utilisateurs simultanés au lieu du volume d'appels, et le filtre du breaker lit l'échange
+d'une manière qui casse la poignée de main d'upgrade. Protéger une connexion longue est un autre
+problème, et compter des requêtes HTTP n'en est pas la réponse.
+
+### Résilience
+
+| Mécanisme | Implémentation | Ce qu'il empêche |
+|---|---|---|
+| Circuit breaker | Resilience4j, une instance par route | Un service en panne retient une connexion de la gateway pour chaque appelant en attente jusqu'à expiration. La gateway épuise ses connexions avant que le service ne revienne : un service tombé emporte la plateforme. |
+| Quota par appelant | `RedisRateLimiter`, clé = `sub` du JWT | Une boucle côté client qui consomme la capacité de tout le monde. |
+| Time limiter | 10 s | Un service lent est un service en panne : sans cela, un aval qui accepte la connexion et ne répond jamais n'est jamais compté comme un échec. |
+
+Breaker ouvert → `FallbackController` répond **503** en `ProblemDetail` RFC 7807, la même forme
+que les services derrière. 503 et non 500 : la requête n'a jamais été tentée, rien n'est corrompu,
+et réessayer plus tard est la bonne réponse — ce sur quoi un client peut agir.
+
+La clé du quota est le `sub` du JWT, pas l'adresse IP : derrière un tunnel Cloudflare toutes les
+requêtes arrivent de quelques adresses, un quota par IP serait donc partagé par tout le monde et un
+seul utilisateur intensif étranglerait les autres.
+
+Une panne Redis **ne bloque pas** le trafic. `RedisRateLimiter` intercepte l'échec et laisse passer
+la requête en journalisant l'erreur : le pire cas est du trafic non compté pendant la panne, pas une
+plateforme injoignable. C'est le bon compromis pour un quota — et la raison pour laquelle cela
+mérite une alerte plutôt qu'une confiance aveugle.
 
 ### Le double préfixe
 
@@ -126,6 +160,9 @@ Une seule origine autorisée, injectée par l'environnement (`CORS_ALLOWED_ORIGI
 | `CORS_ALLOWED_ORIGIN` | Origine autorisée (défaut : `https://web.welylabs.app`) |
 | `KEYCLOAK_ISSUER_URI` | Issuer public |
 | `KEYCLOAK_INTERNAL_JWK_SET_URI` | JWKS interne |
+| `REDIS_HOST` / `REDIS_PORT` | Compteurs de quota (défaut : `localhost:6379`) |
+| `RATE_LIMIT_REPLENISH_RATE` | Débit soutenu par appelant, en req/s (défaut : 20) |
+| `RATE_LIMIT_BURST_CAPACITY` | Rafale autorisée (défaut : 40) |
 
 ---
 
@@ -161,9 +198,14 @@ kubectl apply -k overlays/local --server-side
 
 ## Limites connues
 
-- **Pas de circuit breaker.** Les routes ont un `retry(3)` (GET et 5xx uniquement, par défaut), mais rien n'isole un service en panne : une dépendance lente dégrade toute la gateway. Resilience4j est le prochain chantier.
-- **Pas de rate limiting.** La dépendance `spring-boot-starter-data-redis-reactive` est déclarée en prévision d'un `RequestRateLimiter`, mais n'est pas encore utilisée.
-- **Pas de timeouts explicites** par route.
-- **Route fantôme** : `/api/v1/media-service/**` pointe vers un service supprimé du projet.
-- **La table de routage est dans la classe principale** plutôt que dans une `@Configuration` dédiée.
-- **Logs trop verbeux en production** : `reactor.netty` et `spring.cloud.gateway` sont en `DEBUG`.
+- **Les seuils du breaker sont uniformes.** Une même configuration pour les cinq routes, alors que
+  `wely-social` interroge Neo4j et `wely-users` PostgreSQL : leurs latences normales n'ont pas de
+  raison d'être jugées au même étalon. À différencier une fois qu'il existe des mesures.
+- **Le quota est par instance de Redis, pas par utilisateur authentifié au sens fort.** Une requête
+  sans jeton retombe sur l'adresse de l'appelant, partagée derrière le tunnel Cloudflare.
+- **Route fantôme** : `/api/v1/media-service/**` pointe vers un service supprimé du projet. La
+  supprimer touche aussi `wely-gitops-infra`, qui injecte `MEDIA_API_URL`.
+- **Redis n'est pas répliqué** : un seul pod, sans persistance. Acceptable pour des compteurs de
+  quota — les perdre ne fait que remettre quelques appelants à zéro.
+- **Pas de test d'intégration du quota.** Le comportement du limiteur face à un vrai Redis n'est pas
+  couvert : il faudrait Testcontainers pour observer un 429.
