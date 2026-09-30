@@ -56,9 +56,6 @@ class RouteConfigTest {
                 .expectNext("calendar-social-api")
                 .expectNext("calendar-chat-api")
                 .expectNext("chat-rsocket-route")
-                // Kept although the media service was removed from the project. Dropping it
-                // also touches wely-gitops-infra, which injects MEDIA_API_URL.
-                .expectNext("calendar-media-api")
                 .expectNext("calendar-events-api")
                 .verifyComplete();
     }
@@ -70,7 +67,7 @@ class RouteConfigTest {
         // than on one, because the point of extracting proxyFilters was that a route could no
         // longer be forgotten.
         for (String id : new String[] {"calendar-users-api", "calendar-social-api",
-                "calendar-chat-api", "calendar-media-api", "calendar-events-api"}) {
+                "calendar-chat-api", "calendar-events-api"}) {
             StepVerifier.create(route(id).map(candidate -> candidate.getFilters().size()))
                     .assertNext(count -> assertThat(count).as("filters on %s", id).isEqualTo(4))
                     .verifyComplete();

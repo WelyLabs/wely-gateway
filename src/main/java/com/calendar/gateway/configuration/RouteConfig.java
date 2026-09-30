@@ -46,7 +46,6 @@ public class RouteConfig {
     private final String socialApiUrl;
     private final String chatApiUrl;
     private final String chatRSocketUrl;
-    private final String mediaApiUrl;
     private final String eventsApiUrl;
 
     private final RateLimiter<?> rateLimiter;
@@ -58,7 +57,6 @@ public class RouteConfig {
                        @Value("${social.api.url}") String socialApiUrl,
                        @Value("${chat.api.url}") String chatApiUrl,
                        @Value("${chat.rsocket.url}") String chatRSocketUrl,
-                       @Value("${media.api.url}") String mediaApiUrl,
                        @Value("${events.api.url}") String eventsApiUrl) {
         this.rateLimiter = rateLimiter;
         this.keyResolver = keyResolver;
@@ -66,7 +64,6 @@ public class RouteConfig {
         this.socialApiUrl = socialApiUrl;
         this.chatApiUrl = chatApiUrl;
         this.chatRSocketUrl = chatRSocketUrl;
-        this.mediaApiUrl = mediaApiUrl;
         this.eventsApiUrl = eventsApiUrl;
     }
 
@@ -94,10 +91,6 @@ public class RouteConfig {
                 .route("chat-rsocket-route", r -> r
                         .path("/rsocket/**", "/rsocket")
                         .uri(chatRSocketUrl))
-                .route("calendar-media-api", r -> r
-                        .path("/api/v1/media-service/**")
-                        .filters(proxyFilters("media"))
-                        .uri(mediaApiUrl))
                 .route("calendar-events-api", r -> r
                         .path("/api/v1/events-service/**")
                         .filters(proxyFilters("events"))
