@@ -32,8 +32,8 @@ class GatewayApplicationTest {
                 .expectNext("calendar-social-api")
                 .expectNext("calendar-chat-api")
                 .expectNext("chat-rsocket-route")
-                // Route conservée alors que le service media a été supprimé du projet.
-                // Son retrait touche aussi wely-gitops-infra (variable MEDIA_API_URL).
+                // Kept although the media service was removed from the project. Dropping it
+                // also touches wely-gitops-infra, which injects MEDIA_API_URL.
                 .expectNext("calendar-media-api")
                 .expectNext("calendar-events-api")
                 .verifyComplete();
@@ -41,9 +41,9 @@ class GatewayApplicationTest {
 
     @Test
     void configureRoute_shouldStripTheApiVersionPrefixOnly() {
-        // stripPrefix(2) retire /api/v1 mais conserve /<service>, que chaque service
-        // réattache via son WebConfig : un service répond donc sur le même chemin
-        // qu'il soit appelé via la gateway ou directement.
+        // stripPrefix(2) removes /api/v1 but keeps /<service>, which each service
+        // reattaches through its WebConfig: a service therefore answers on the same
+        // path whether it is called through the gateway or directly.
         StepVerifier.create(routeLocator.getRoutes()
                         .filter(route -> route.getId().equals("calendar-users-api"))
                         .map(route -> route.getFilters().size()))
@@ -53,8 +53,8 @@ class GatewayApplicationTest {
 
     @Test
     void main_shouldStartWithoutFailing() {
-        // Vérification superficielle assumée : elle ne garantit que l'absence d'échec
-        // au démarrage. Le contexte applicatif réel est couvert par contextLoads.
+        // Deliberately shallow: it only guarantees the absence of a start-up failure.
+        // The real application context is covered by contextLoads.
         System.setProperty("spring.profiles.active", "test");
 
         assertThatCode(() -> GatewayApplication.main(new String[] {"--server.port=0"}))
