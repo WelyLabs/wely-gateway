@@ -5,6 +5,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
@@ -21,16 +22,21 @@ import java.net.URI;
  * attempted, nothing is corrupt, and retrying later is the correct response — which is what a
  * client, and the browser, can act on. A 500 would say the opposite.
  *
- * <p>{@code @RequestMapping} covers every method, because the breaker forwards the original
+ * <p>The methods are listed rather than left open, because the breaker forwards the original
  * request unchanged: a failed POST arrives here as a POST, and answering it with 405 would hide
- * the outage behind a nonsense status.
+ * the outage behind a nonsense status. These five are what the gateway routes — a bare
+ * {@code @RequestMapping} would also accept TRACE and HEAD, which nothing sends and which
+ * Sonar's java:S3752 rightly flags as a wider surface than intended.
  */
 @RestController
 public class FallbackController {
 
     private static final URI TYPE = URI.create("https://welylabs.app/problems/service-unavailable");
 
-    @RequestMapping("/fallback/{service}")
+    @RequestMapping(
+            value = "/fallback/{service}",
+            method = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT,
+                      RequestMethod.PATCH, RequestMethod.DELETE})
     public Mono<ResponseEntity<ProblemDetail>> fallback(@PathVariable String service) {
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.SERVICE_UNAVAILABLE);
         problem.setType(TYPE);

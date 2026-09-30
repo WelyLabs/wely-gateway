@@ -6,6 +6,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import reactor.test.StepVerifier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -68,6 +70,22 @@ class FallbackControllerTest {
                     assertThat(entity.getBody().getStatus()).isEqualTo(entity.getStatusCode().value());
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("the routed methods are declared, and only those")
+    void fallback_shouldAcceptOnlyTheMethodsTheGatewayRoutes() throws NoSuchMethodException {
+        // A bare @RequestMapping also accepts TRACE and HEAD. The five listed are what the
+        // gateway proxies, and the breaker forwards the original method unchanged — so a failed
+        // POST has to arrive here as a POST rather than meeting a 405.
+        RequestMapping mapping = FallbackController.class
+                .getMethod("fallback", String.class)
+                .getAnnotation(RequestMapping.class);
+
+        assertThat(mapping).isNotNull();
+        assertThat(mapping.method()).containsExactlyInAnyOrder(
+                RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT,
+                RequestMethod.PATCH, RequestMethod.DELETE);
     }
 
     @Test
