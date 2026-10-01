@@ -93,7 +93,7 @@ class FallbackControllerTest {
     void fallback_shouldBeSerialisableAsProblemJson() {
         // Not a behavioural assertion so much as a guard: swapping ProblemDetail for a plain
         // record would compile and quietly change the content type clients negotiate.
-        StepVerifier.create(controller.fallback("media"))
+        StepVerifier.create(controller.fallback("events"))
                 .assertNext(response -> assertThat(response.getBody())
                         .isInstanceOf(ProblemDetail.class))
                 .verifyComplete();

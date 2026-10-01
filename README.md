@@ -146,6 +146,34 @@ OAuth2TokenValidator<Jwt> validator = new DelegatingOAuth2TokenValidator<>(
 
 Une seule origine autorisée, injectée par l'environnement (`CORS_ALLOWED_ORIGIN`), avec `allowCredentials(true)`. Pas de joker.
 
+### OpenAPI
+
+La gateway sert sa propre spécification, sans jeton :
+
+| | |
+|---|---|
+| Spec JSON | `http://localhost:8081/v3/api-docs` |
+| Swagger UI | `http://localhost:8081/swagger-ui.html` |
+
+**Désactivée par défaut**, contrairement aux quatre services. Ceux-ci sont en `ClusterIP` :
+leur documentation est inatteignable de l'extérieur par construction. La gateway, elle, est le
+processus qu'atteint le tunnel Cloudflare, et les règles de chemin du tunnel sont configurées
+dans Cloudflare, pas dans `wely-gitops-infra` — les manifestes ne peuvent donc pas garantir que
+`/v3/api-docs` n'est pas joignable publiquement.
+
+```properties
+springdoc.api-docs.enabled=${SPRINGDOC_ENABLED:false}
+springdoc.swagger-ui.enabled=${SPRINGDOC_ENABLED:false}
+```
+
+Les overlays `local` et `dev` posent `SPRINGDOC_ENABLED=true` ; `prod` ne le pose pas. Le profil
+`dev` l'active aussi, pour un poste de travail.
+
+Elle n'agrège pas les spécifications des services : chacun sert la sienne sur son propre port, en
+interne au cluster. Un agrégateur supposerait que la gateway connaisse les chemins de
+documentation de chaque service, alors qu'elle ne route délibérément que `/api/v1/<service>/**`
+et `/rsocket`.
+
 ---
 
 ## Configuration

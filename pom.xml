@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>4.0.0</version>
+		<version>4.0.1</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>com.calendar</groupId>
@@ -29,6 +29,7 @@
 	<properties>
 		<java.version>25</java.version>
 		<spring-cloud.version>2025.1.0</spring-cloud.version>
+		<springdoc.version>3.0.1</springdoc.version>
 		<!-- SonarCloud properties -->
 		<sonar.projectKey>WelyLabs_wely-gateway</sonar.projectKey>
 		<sonar.projectName>wely-gateway</sonar.projectName>
@@ -40,6 +41,13 @@
 		<build.dir>target</build.dir>
 	</properties>
 	<dependencies>
+		<!-- OpenAPI, served at /swagger-ui.html and /v3/api-docs. On the gateway this
+		     documents its own routes; each service publishes its own alongside. -->
+		<dependency>
+			<groupId>org.springdoc</groupId>
+			<artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
+			<version>${springdoc.version}</version>
+		</dependency>
 		<!-- Expose /actuator/health/{liveness,readiness} for the Kubernetes probes. -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

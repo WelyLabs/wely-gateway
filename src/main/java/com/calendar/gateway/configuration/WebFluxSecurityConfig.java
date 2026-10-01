@@ -42,6 +42,11 @@ public class WebFluxSecurityConfig {
                         .pathMatchers("/actuator/health/liveness", "/actuator/health/readiness").permitAll()
                         .pathMatchers("/rsocket/**").permitAll()
                         .pathMatchers("/public/**").permitAll()
+                        // OpenAPI. These paths are not routed by the gateway — it forwards
+                        // /api/v1/<service>/** and /rsocket only — so opening them here makes
+                        // the documentation reachable in-cluster and in dev, and nowhere else.
+                        .pathMatchers("/v3/api-docs", "/v3/api-docs/**", "/swagger-ui/**",
+                                      "/swagger-ui.html", "/webjars/swagger-ui/**").permitAll()
                         .anyExchange().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
                 .build();

