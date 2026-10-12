@@ -60,9 +60,19 @@ jobs:
           git config user.email "actions@github.com"
 
           for attempt in 1 2 3 4 5; do
-            ( cd "overlays/$ENVIRONMENT" \
-              && kustomize edit set image \
-                   "ghcr.io/welylabs/wely-gateway=ghcr.io/welylabs/wely-gateway:$IMAGE_TAG" )
+            # Only the newTag line is rewritten: `kustomize edit` re-serialises the whole file and
+            # duplicates the comments inside the patches on every run.
+            export IMAGE="ghcr.io/welylabs/wely-gateway"
+            perl -0pi -e \
+              's/(- name: \Q$ENV{IMAGE}\E\n(?:  .*\n)*?  newTag: ).*/${1}$ENV{IMAGE_TAG}/' \
+              "overlays/$ENVIRONMENT/kustomization.yaml"
+
+            # Unlike `kustomize edit`, this cannot add a missing entry; say so instead of reporting
+            # "already at" the tag.
+            if ! grep -qxF "  newTag: $IMAGE_TAG" "overlays/$ENVIRONMENT/kustomization.yaml"; then
+              echo "::error::No $IMAGE entry under images: in overlays/$ENVIRONMENT."
+              exit 1
+            fi
 
             if [ -z "$(git status --porcelain)" ]; then
               echo "Already at $IMAGE_TAG; nothing to push."
