@@ -1,5 +1,7 @@
-# Stage 1: build
-FROM eclipse-temurin:25-jdk-alpine AS build
+# Stage 1: build, on the runner's own architecture. A jar is the same on every platform, so
+# Maven runs once, natively; only stage 2 is built per platform. Without --platform, buildx ran
+# the whole Maven build again for arm64 under QEMU emulation, which took most of the CI time.
+FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk-alpine AS build
 WORKDIR /app
 
 # pom and wrapper first, so the dependency layer survives a source-only change
