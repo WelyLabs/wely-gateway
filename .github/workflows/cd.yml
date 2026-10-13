@@ -68,8 +68,10 @@ jobs:
               "overlays/$ENVIRONMENT/kustomization.yaml"
 
             # Unlike `kustomize edit`, this cannot add a missing entry; say so instead of reporting
-            # "already at" the tag.
-            if ! grep -qxF "  newTag: $IMAGE_TAG" "overlays/$ENVIRONMENT/kustomization.yaml"; then
+            # "already at" the tag. The check reads this image's own entry: any other image already
+            # on the same tag (every prod entry is `latest`) would pass a file-wide grep.
+            if ! perl -0ne '$found ||= /^- name: \Q$ENV{IMAGE}\E\n(?:  .*\n)*?  newTag: \Q$ENV{IMAGE_TAG}\E$/m; END { exit !$found }' \
+                "overlays/$ENVIRONMENT/kustomization.yaml"; then
               echo "::error::No $IMAGE entry under images: in overlays/$ENVIRONMENT."
               exit 1
             fi
