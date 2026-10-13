@@ -56,6 +56,7 @@ class RouteConfigTest {
                 .expectNext("calendar-social-api")
                 .expectNext("calendar-chat-api")
                 .expectNext("chat-rsocket-route")
+                .expectNext("events-poll-stream")
                 .expectNext("calendar-events-api")
                 .verifyComplete();
     }
@@ -82,6 +83,16 @@ class RouteConfigTest {
         // filter reads the exchange in a way that breaks the upgrade.
         StepVerifier.create(route("chat-rsocket-route").map(candidate -> candidate.getFilters().size()))
                 .expectNext(0)
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("the poll stream route only strips the prefix")
+    void configureRoute_shouldLeaveThePollStreamOutOfTheBreaker() {
+        // An SSE response lasts as long as the event page: the breaker's 10s time limiter
+        // would cut it. One filter, stripPrefix.
+        StepVerifier.create(route("events-poll-stream").map(candidate -> candidate.getFilters().size()))
+                .expectNext(1)
                 .verifyComplete();
     }
 
