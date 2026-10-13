@@ -8,6 +8,10 @@ WORKDIR /app
 COPY .mvn .mvn
 COPY mvnw pom.xml ./
 RUN chmod +x mvnw && ./mvnw -B dependency:go-offline
+# go-offline leaves out the annotation processors (MapStruct, Lombok): compiling a stub class
+# fetches them here, in the cached layer, instead of during the package below on every build.
+RUN mkdir -p src/main/java && echo 'class Warmup {}' > src/main/java/Warmup.java \
+    && ./mvnw -B -q compile && rm -rf src target target-maven
 
 COPY src src
 # Tests run in CI against the whole matrix; repeating them here would double the
