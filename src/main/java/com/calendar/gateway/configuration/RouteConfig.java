@@ -91,6 +91,14 @@ public class RouteConfig {
                 .route("chat-rsocket-route", r -> r
                         .path("/rsocket/**", "/rsocket")
                         .uri(chatRSocketUrl))
+                // A date poll's live stream (Server-Sent Events): one request that stays open while
+                // the event page is. The breaker's 10s time limiter would cut it, and retrying or
+                // rate limiting it counts the wrong thing, as for the WebSocket above. Declared
+                // before the events route, which would otherwise match it first.
+                .route("events-poll-stream", r -> r
+                        .path("/api/v1/events-service/events/*/poll/stream")
+                        .filters(f -> f.stripPrefix(2))
+                        .uri(eventsApiUrl))
                 .route("calendar-events-api", r -> r
                         .path("/api/v1/events-service/**")
                         .filters(proxyFilters("events"))
