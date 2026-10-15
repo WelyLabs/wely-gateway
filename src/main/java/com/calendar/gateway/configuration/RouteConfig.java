@@ -9,6 +9,7 @@ import org.springframework.cloud.gateway.filter.ratelimit.RateLimiter;
 import org.springframework.cloud.gateway.route.builder.UriSpec;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
 
 import java.util.function.Function;
 
@@ -42,6 +43,9 @@ import java.util.function.Function;
 @Configuration
 public class RouteConfig {
 
+    static final String INTERNAL_PATHS_ROUTE = "internal-paths-blocked";
+    private static final String NOWHERE = "no://op";
+
     private final String usersApiUrl;
     private final String socialApiUrl;
     private final String chatApiUrl;
@@ -73,6 +77,11 @@ public class RouteConfig {
     @Bean
     public RouteLocator configureRoute(RouteLocatorBuilder builder) {
         return builder.routes()
+                // First, so no service route claims an internal path; no:// is never forwarded, the answer is an empty 404.
+                .route(INTERNAL_PATHS_ROUTE, r -> r
+                        .path("/api/v1/*/internal/**")
+                        .filters(f -> f.setStatus(HttpStatus.NOT_FOUND))
+                        .uri(NOWHERE))
                 .route("calendar-users-api", r -> r
                         .path("/api/v1/user-service/**")
                         .filters(proxyFilters("users"))
