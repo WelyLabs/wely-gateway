@@ -58,6 +58,8 @@ class RouteConfigTest {
                 .expectNext("chat-rsocket-route")
                 .expectNext("events-poll-stream")
                 .expectNext("calendar-events-api")
+                .expectNext("notifications-stream")
+                .expectNext("wely-notifications")
                 .verifyComplete();
     }
 
@@ -68,7 +70,7 @@ class RouteConfigTest {
         // than on one, because the point of extracting proxyFilters was that a route could no
         // longer be forgotten.
         for (String id : new String[] {"calendar-users-api", "calendar-social-api",
-                "calendar-chat-api", "calendar-events-api"}) {
+                "calendar-chat-api", "calendar-events-api", "wely-notifications"}) {
             StepVerifier.create(route(id).map(candidate -> candidate.getFilters().size()))
                     .assertNext(count -> assertThat(count).as("filters on %s", id).isEqualTo(4))
                     .verifyComplete();
@@ -92,6 +94,14 @@ class RouteConfigTest {
         // An SSE response lasts as long as the event page: the breaker's 10s time limiter
         // would cut it. One filter, stripPrefix.
         StepVerifier.create(route("events-poll-stream").map(candidate -> candidate.getFilters().size()))
+                .expectNext(1)
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("the notifications stream route only strips the prefix")
+    void configureRoute_shouldLeaveTheNotificationsStreamOutOfTheBreaker() {
+        StepVerifier.create(route("notifications-stream").map(candidate -> candidate.getFilters().size()))
                 .expectNext(1)
                 .verifyComplete();
     }

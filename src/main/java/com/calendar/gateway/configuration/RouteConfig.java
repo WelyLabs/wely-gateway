@@ -47,6 +47,7 @@ public class RouteConfig {
     private final String chatApiUrl;
     private final String chatRSocketUrl;
     private final String eventsApiUrl;
+    private final String notificationsApiUrl;
 
     private final RateLimiter<?> rateLimiter;
     private final KeyResolver keyResolver;
@@ -57,7 +58,8 @@ public class RouteConfig {
                        @Value("${social.api.url}") String socialApiUrl,
                        @Value("${chat.api.url}") String chatApiUrl,
                        @Value("${chat.rsocket.url}") String chatRSocketUrl,
-                       @Value("${events.api.url}") String eventsApiUrl) {
+                       @Value("${events.api.url}") String eventsApiUrl,
+                       @Value("${notifications.api.url}") String notificationsApiUrl) {
         this.rateLimiter = rateLimiter;
         this.keyResolver = keyResolver;
         this.usersApiUrl = usersApiUrl;
@@ -65,6 +67,7 @@ public class RouteConfig {
         this.chatApiUrl = chatApiUrl;
         this.chatRSocketUrl = chatRSocketUrl;
         this.eventsApiUrl = eventsApiUrl;
+        this.notificationsApiUrl = notificationsApiUrl;
     }
 
     @Bean
@@ -103,6 +106,15 @@ public class RouteConfig {
                         .path("/api/v1/events-service/**")
                         .filters(proxyFilters("events"))
                         .uri(eventsApiUrl))
+                // The notifications stream stays open for the whole session, like the poll stream.
+                .route("notifications-stream", r -> r
+                        .path("/api/v1/notifications-service/notifications/stream")
+                        .filters(f -> f.stripPrefix(2))
+                        .uri(notificationsApiUrl))
+                .route("wely-notifications", r -> r
+                        .path("/api/v1/notifications-service/**")
+                        .filters(proxyFilters("notifications"))
+                        .uri(notificationsApiUrl))
                 .build();
     }
 
