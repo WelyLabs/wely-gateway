@@ -52,6 +52,7 @@ class RouteConfigTest {
     @DisplayName("one route per service, in order")
     void configureRoute_shouldDeclareOneRoutePerService() {
         StepVerifier.create(routeLocator.getRoutes().map(Route::getId))
+                .expectNext("internal-paths-blocked")
                 .expectNext("calendar-users-api")
                 .expectNext("calendar-social-api")
                 .expectNext("calendar-chat-api")
@@ -132,6 +133,66 @@ class RouteConfigTest {
                 .expectBody()
                 .jsonPath("$.status").isEqualTo(503)
                 .jsonPath("$.title").isEqualTo("Service unavailable")
+                .jsonPath("$.service").isEqualTo("users");
+    }
+
+    // --- internal paths ---------------------------------------------------
+
+    @Test
+    @DisplayName("the internal block carries the status filter only: no quota, no breaker, no forwarding")
+    void configureRoute_shouldGiveTheInternalBlockOnlyTheStatusFilter() {
+        StepVerifier.create(route(RouteConfig.INTERNAL_PATHS_ROUTE).map(candidate -> candidate.getFilters().size()))
+                .expectNext(1)
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("an internal path answers 404 at the gateway; forwarded, it would be 503 from the closed test port")
+    void configureRoute_shouldAnswer404WithoutForwarding_whenThePathIsInternal() {
+        webTestClient.mutateWith(mockJwt())
+                .get()
+                .uri("/api/v1/user-service/internal/deleted-users")
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectBody().isEmpty();
+    }
+
+    @Test
+    @DisplayName("every service's internal paths are blocked, whatever the method")
+    void configureRoute_shouldBlockInternalPaths_whateverTheServiceSegment() {
+        for (String service : new String[] {"user-service", "social-service", "chat-service", "events-service",
+                "notifications-service", "media-service"}) {
+            webTestClient.mutateWith(mockJwt())
+                    .get()
+                    .uri("/api/v1/" + service + "/internal/anything/deeper?after=x")
+                    .exchange()
+                    .expectStatus().isNotFound();
+        }
+        webTestClient.mutateWith(mockJwt())
+                .delete()
+                .uri("/api/v1/user-service/internal/deleted-users")
+                .exchange()
+                .expectStatus().isNotFound();
+    }
+
+    @Test
+    @DisplayName("without a token the gateway answers 401 before it reveals anything about an internal path")
+    void configureRoute_shouldRequireAToken_beforeAnsweringAnInternalPath() {
+        webTestClient.get()
+                .uri("/api/v1/user-service/internal/deleted-users")
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    @DisplayName("the account deletion goes through the users route and its breaker, like any write")
+    void configureRoute_shouldForwardTheProfileDeletionThroughTheUsersBreaker_whenTheServiceIsDown() {
+        webTestClient.mutateWith(mockJwt())
+                .delete()
+                .uri("/api/v1/user-service/profile")
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.SERVICE_UNAVAILABLE)
+                .expectBody()
                 .jsonPath("$.service").isEqualTo("users");
     }
 }

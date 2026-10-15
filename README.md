@@ -49,6 +49,7 @@ Java 25 · Spring Boot 4 · **Spring Cloud Gateway** (WebFlux) · OAuth2 Resourc
 | `/api/v1/chat-service/**` | wely-chat | quota · breaker · `stripPrefix(2)` · `retry(3)` |
 | `/api/v1/events-service/**` | wely-events | quota · breaker · `stripPrefix(2)` · `retry(3)` |
 | `/rsocket`, `/rsocket/**` | wely-chat (WebSocket) | *aucun* |
+| `/api/v1/*/internal/**` | none: **404**, never forwarded | `setStatus(404)` |
 
 L'ordre des filtres n'est pas arbitraire. Le quota passe **avant** le breaker : un appelant qui
 inonde la gateway est refoulé avant qu'on touche à quoi que ce soit en aval, budget d'échec du
@@ -60,6 +61,10 @@ WebSocket est **une** requête qui vit ensuite le temps de l'onglet. Un quota y 
 nombre d'utilisateurs simultanés au lieu du volume d'appels, et le filtre du breaker lit l'échange
 d'une manière qui casse la poignée de main d'upgrade. Protéger une connexion longue est un autre
 problème, et compter des requêtes HTTP n'en est pas la réponse.
+
+### Internal paths
+
+`/api/v1/*/internal/**` is declared **before** the service routes and answers an empty 404 without forwarding anything (its URI, `no://op`, is not a scheme any routing filter handles). Internal endpoints, such as wely-users' deleted-users listing for the other services' reconciliation, are reached only inside the cluster, with their own `X-Internal-Secret`: even a leaked secret is useless from outside. Authentication still runs first, so a caller without a token gets 401.
 
 ### Résilience
 
