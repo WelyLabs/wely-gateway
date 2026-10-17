@@ -42,6 +42,9 @@ public class WebFluxSecurityConfig {
                         .pathMatchers("/actuator/health/liveness", "/actuator/health/readiness").permitAll()
                         .pathMatchers("/rsocket/**").permitAll()
                         .pathMatchers("/public/**").permitAll()
+                        // An event's .ics, opened by a calendar app that carries no token: the
+                        // short-lived link in the path is checked by wely-events. Reading only.
+                        .pathMatchers(HttpMethod.GET, "/api/v1/events-service/public/calendar/*").permitAll()
                         // OpenAPI. These paths are not routed by the gateway — it forwards
                         // /api/v1/<service>/** and /rsocket only — so opening them here makes
                         // the documentation reachable in-cluster and in dev, and nowhere else.

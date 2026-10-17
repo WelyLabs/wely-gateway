@@ -48,6 +48,24 @@ class WebFluxSecurityConfigTest {
     }
 
     @Test
+    void calendarFiles_shouldPassSecurityWithoutAToken() {
+        // A calendar app carries no JWT: past security, whatever wely-events answers, never a 401.
+        webTestClient.get().uri("/api/v1/events-service/public/calendar/tok.ics")
+                .exchange()
+                .expectStatus().value(status -> assertThat(status).isNotEqualTo(401));
+    }
+
+    @Test
+    void calendarFiles_shouldOnlyBeOpenedForReading() {
+        webTestClient.post().uri("/api/v1/events-service/public/calendar/tok.ics")
+                .exchange()
+                .expectStatus().isUnauthorized();
+        webTestClient.get().uri("/api/v1/events-service/events/e1")
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
     void testProtectedEndpoints() {
         // Any other endpoint should be unauthorized without token
         webTestClient.get().uri("/unmapped-path")
