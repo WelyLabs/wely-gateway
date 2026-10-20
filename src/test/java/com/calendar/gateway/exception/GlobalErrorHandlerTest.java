@@ -1,5 +1,7 @@
 package com.calendar.gateway.exception;
 
+import com.calendar.gateway.configuration.RequestIdWebFilter;
+import com.jayway.jsonpath.JsonPath;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,12 +23,14 @@ import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.WebFilter;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,6 +48,7 @@ class GlobalErrorHandlerTest {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
     private static final String THROWING_PATH = "/test-only/throwing-filter";
+    private static final String CLIENT_REQUEST_ID = "client-chosen-request-id";
 
     @TestConfiguration
     static class ThrowingFilterConfig {
@@ -106,6 +111,25 @@ class GlobalErrorHandlerTest {
                 .jsonPath("$.instance").isEqualTo("/no/such/route")
                 .jsonPath("$.requestId").isNotEmpty()
                 .jsonPath("$.timestamp").isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("the problem's requestId is the gateway's id, returned in X-Request-Id, not the client's")
+    void handle_shouldUseTheGatewayRequestId() {
+        assertOneRequestId(webTestClient.mutateWith(mockJwt())
+                .get().uri("/no/such/route")
+                .header(RequestIdWebFilter.REQUEST_ID_HEADER, CLIENT_REQUEST_ID)
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectBody().returnResult());
+    }
+
+    /** The id the client received in the header is the one in the body, and not the one it sent. */
+    private static void assertOneRequestId(EntityExchangeResult<byte[]> result) {
+        String header = result.getResponseHeaders().getFirst(RequestIdWebFilter.REQUEST_ID_HEADER);
+        String body = JsonPath.read(new String(result.getResponseBodyContent(), StandardCharsets.UTF_8), "$.requestId");
+        assertThat(header).isNotBlank().isNotEqualTo(CLIENT_REQUEST_ID);
+        assertThat(body).isEqualTo(header);
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.calendar.gateway;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.health.actuate.endpoint.HealthEndpointGroups;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.ActiveProfiles;
@@ -40,6 +41,20 @@ class GatewayApplicationTest {
                 .RateLimiter.class)).isNotNull();
         assertThat(context.getBean(org.springframework.cloud.gateway.filter.ratelimit
                 .KeyResolver.class)).isNotNull();
+    }
+
+    @Test
+    @DisplayName("the probe groups check the probe state only, not Redis, despite their extra paths")
+    void contextShouldKeepTheProbeGroupsToTheirAvailabilityState() {
+        // Naming a group in the properties (for its /livez or /readyz path) makes it a user group
+        // that includes every indicator by default: Redis down would then fail liveness and get
+        // every pod restarted. application.properties pins them back; this keeps it so.
+        HealthEndpointGroups groups = context.getBean(HealthEndpointGroups.class);
+
+        assertThat(groups.get("liveness").isMember("livenessState")).isTrue();
+        assertThat(groups.get("liveness").isMember("redis")).isFalse();
+        assertThat(groups.get("readiness").isMember("readinessState")).isTrue();
+        assertThat(groups.get("readiness").isMember("redis")).isFalse();
     }
 
     @Test

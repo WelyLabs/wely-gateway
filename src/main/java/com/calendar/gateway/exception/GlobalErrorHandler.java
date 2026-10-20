@@ -77,7 +77,7 @@ public class GlobalErrorHandler implements WebExceptionHandler {
         }
 
         String path = exchange.getRequest().getPath().value();
-        String requestId = exchange.getRequest().getId();
+        String requestId = RequestIds.of(exchange);
         ProblemDetail problem;
 
         if (ex instanceof ResponseStatusException statusException

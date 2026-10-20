@@ -41,7 +41,7 @@ public class TooManyRequestsProblemFilter implements GatewayFilter {
                 }
                 // DEBUG: a looping client is exactly what produces these, one per request.
                 log.debug("Too many requests {} on {} (request {})",
-                        CODE, exchange.getRequest().getPath(), exchange.getRequest().getId());
+                        CODE, exchange.getRequest().getPath(), RequestIds.of(exchange));
                 return problemWriter.write(exchange, Problems.of(HttpStatus.TOO_MANY_REQUESTS, CODE,
                         "Too many requests", "The request quota is spent. Retry in a moment.", exchange));
             }

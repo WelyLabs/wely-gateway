@@ -1,21 +1,24 @@
 package com.calendar.gateway.configuration;
 
 import com.calendar.gateway.exception.TooManyRequestsProblemFilter;
+import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.cloud.gateway.filter.OrderedGatewayFilter;
 import org.springframework.cloud.gateway.route.Route;
 import org.springframework.cloud.gateway.route.RouteLocator;
+import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,6 +31,8 @@ import static org.springframework.security.test.web.reactive.server.SecurityMock
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
 class RouteConfigTest {
+
+    private static final String CLIENT_REQUEST_ID = "client-chosen-request-id";
 
     @Autowired
     private RouteLocator routeLocator;
@@ -151,6 +156,26 @@ class RouteConfigTest {
                 .jsonPath("$.instance").isEqualTo("/api/v1/user-service/profile")
                 .jsonPath("$.requestId").isNotEmpty()
                 .jsonPath("$.service").isEqualTo("users");
+    }
+
+    @Test
+    @DisplayName("the fallback's requestId is the gateway's id, returned in X-Request-Id, not the client's")
+    void configureRoute_shouldAnswerTheFallbackWithTheGatewayRequestId() {
+        // The breaker forwards to /fallback with a new request: the id must survive the forward.
+        assertOneRequestId(webTestClient.mutateWith(mockJwt())
+                .get().uri("/api/v1/chat-service/conversations")
+                .header(RequestIdWebFilter.REQUEST_ID_HEADER, CLIENT_REQUEST_ID)
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.SERVICE_UNAVAILABLE)
+                .expectBody().returnResult());
+    }
+
+    /** The id the client received in the header is the one in the body, and not the one it sent. */
+    private static void assertOneRequestId(EntityExchangeResult<byte[]> result) {
+        String header = result.getResponseHeaders().getFirst(RequestIdWebFilter.REQUEST_ID_HEADER);
+        String body = JsonPath.read(new String(result.getResponseBodyContent(), StandardCharsets.UTF_8), "$.requestId");
+        assertThat(header).isNotBlank().isNotEqualTo(CLIENT_REQUEST_ID);
+        assertThat(body).isEqualTo(header);
     }
 
     // --- internal paths ---------------------------------------------------

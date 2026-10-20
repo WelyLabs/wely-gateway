@@ -29,7 +29,7 @@ public class ProblemExchangeRejectedHandler implements ServerExchangeRejectedHan
     public Mono<Void> handle(ServerWebExchange exchange, ServerExchangeRejectedException rejected) {
         // The firewall's message names what it rejected; it is for the logs, not the response.
         log.debug("Request rejected by the firewall {} on {} (request {}): {}", GlobalErrorHandler.REQUEST_REFUSED_CODE,
-                exchange.getRequest().getPath(), exchange.getRequest().getId(), rejected.getMessage());
+                exchange.getRequest().getPath(), RequestIds.of(exchange), rejected.getMessage());
 
         return problemWriter.write(exchange, Problems.of(HttpStatus.BAD_REQUEST, GlobalErrorHandler.REQUEST_REFUSED_CODE,
                 HttpStatus.BAD_REQUEST.getReasonPhrase(), "The request could not be served as sent.", exchange));

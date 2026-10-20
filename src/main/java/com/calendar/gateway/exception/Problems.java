@@ -27,7 +27,7 @@ public final class Problems {
     /** When the problem was built, to correlate with the logs. */
     public static final String TIMESTAMP_PROPERTY = "timestamp";
 
-    /** The exchange's request id, the one the gateway's own log lines carry. */
+    /** The request's id ({@link RequestIds#of}): the one forwarded to the services and logged. */
     public static final String REQUEST_ID_PROPERTY = "requestId";
 
     private Problems() {
@@ -51,7 +51,7 @@ public final class Problems {
         problem.setInstance(URI.create(instance));
         problem.setProperty(CODE_PROPERTY, code);
         problem.setProperty(TIMESTAMP_PROPERTY, Instant.now().toString());
-        problem.setProperty(REQUEST_ID_PROPERTY, exchange.getRequest().getId());
+        problem.setProperty(REQUEST_ID_PROPERTY, RequestIds.of(exchange));
 
         return problem;
     }

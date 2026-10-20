@@ -1,5 +1,6 @@
 package com.calendar.gateway.exception;
 
+import com.calendar.gateway.configuration.RequestIdWebFilter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -56,6 +57,17 @@ class ProblemsTest {
 
         assertThat(problem.getInstance()).isEqualTo(URI.create("/api/v1/chat-service/conversations"));
         assertThat(problem.getProperties()).containsEntry(Problems.REQUEST_ID_PROPERTY, exchange.getRequest().getId());
+    }
+
+    @Test
+    @DisplayName("requestId is the id the request-id filter gave the request")
+    void of_shouldUseTheGatewayRequestId() {
+        exchange.getAttributes().put(RequestIdWebFilter.REQUEST_ID_ATTRIBUTE, "6d1f0c2e-8b1a-4f5e-9c3d-7a2b4e6f8a0c");
+
+        ProblemDetail problem = Problems.of(HttpStatus.NOT_FOUND, "GTW-REQ-000", "Not Found", "d", exchange);
+
+        assertThat(problem.getProperties())
+                .containsEntry(Problems.REQUEST_ID_PROPERTY, "6d1f0c2e-8b1a-4f5e-9c3d-7a2b4e6f8a0c");
     }
 
     @Test

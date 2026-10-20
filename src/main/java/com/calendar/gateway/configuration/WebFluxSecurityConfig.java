@@ -44,6 +44,9 @@ public class WebFluxSecurityConfig {
                         // Kubernetes probes: the kubelet carries no token. Only the two
                         // health groups are opened, not /actuator as a whole.
                         .pathMatchers("/actuator/health/liveness", "/actuator/health/readiness").permitAll()
+                        // The same probes outside /actuator, served on this port by Boot's
+                        // additional-path; reading only.
+                        .pathMatchers(HttpMethod.GET, "/livez", "/readyz").permitAll()
                         .pathMatchers("/rsocket/**").permitAll()
                         .pathMatchers("/public/**").permitAll()
                         // An event's .ics, opened by a calendar app that carries no token: the

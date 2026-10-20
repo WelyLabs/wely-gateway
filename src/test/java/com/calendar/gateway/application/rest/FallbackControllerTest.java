@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.calendar.gateway.configuration.RequestIdWebFilter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -117,6 +118,18 @@ class FallbackControllerTest {
                             .isNotBlank()
                             .isEqualTo(exchange.getRequest().getId());
                 })
+                .expectComplete().verify(Duration.ofSeconds(10));
+    }
+
+    @Test
+    @DisplayName("carries the gateway's request id when the request-id filter ran, as in production")
+    void fallback_shouldCarryTheGatewayRequestId() {
+        MockServerWebExchange exchange = forwardedExchange("users");
+        exchange.getAttributes().put(RequestIdWebFilter.REQUEST_ID_ATTRIBUTE, "3e7b9d1f-2c4a-4b6e-8d0f-1a3c5e7b9d2f");
+
+        StepVerifier.create(controller.fallback("users", exchange))
+                .assertNext(response -> assertThat(response.getBody().getProperties())
+                        .containsEntry("requestId", "3e7b9d1f-2c4a-4b6e-8d0f-1a3c5e7b9d2f"))
                 .expectComplete().verify(Duration.ofSeconds(10));
     }
 

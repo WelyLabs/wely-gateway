@@ -1,23 +1,25 @@
 package com.calendar.gateway.configuration;
 
+import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.mockito.Mockito;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.BadJwtException;
+import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.reactive.server.EntityExchangeResult;
+import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import org.springframework.context.ApplicationContext;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.web.reactive.server.WebTestClient;
-
-import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -27,6 +29,8 @@ import static org.springframework.security.test.web.reactive.server.SecurityMock
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
 class WebFluxSecurityConfigTest {
+
+    private static final String CLIENT_REQUEST_ID = "client-chosen-request-id";
 
     private WebTestClient webTestClient;
 
@@ -131,6 +135,23 @@ class WebFluxSecurityConfigTest {
     }
 
     @Test
+    void springSecurityFilterChain_shouldAnswer401WithTheGatewayRequestId() {
+        assertOneRequestId(webTestClient.get().uri("/api/v1/user-service/profile")
+                .header(RequestIdWebFilter.REQUEST_ID_HEADER, CLIENT_REQUEST_ID)
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody().returnResult());
+    }
+
+    /** The id the client received in the header is the one in the body, and not the one it sent. */
+    private static void assertOneRequestId(EntityExchangeResult<byte[]> result) {
+        String header = result.getResponseHeaders().getFirst(RequestIdWebFilter.REQUEST_ID_HEADER);
+        String body = JsonPath.read(new String(result.getResponseBodyContent(), StandardCharsets.UTF_8), "$.requestId");
+        assertThat(header).isNotBlank().isNotEqualTo(CLIENT_REQUEST_ID);
+        assertThat(body).isEqualTo(header);
+    }
+
+    @Test
     void springSecurityFilterChain_shouldAnswer401AsOurProblem_whenTheTokenIsInvalid() {
         Mockito.when(reactiveJwtDecoder.decode("bad-token"))
                 .thenReturn(Mono.error(new BadJwtException("expired")));
@@ -164,6 +185,17 @@ class WebFluxSecurityConfigTest {
     void probes_shouldAnswerWithoutAToken() {
         webTestClient.get().uri("/actuator/health/liveness").exchange().expectStatus().isOk();
         webTestClient.get().uri("/actuator/health/readiness").exchange().expectStatus().isOk();
+        // The aliases outside /actuator, for when actuator moves to a management port.
+        webTestClient.get().uri("/livez").exchange().expectStatus().isOk()
+                .expectBody().jsonPath("$.status").isEqualTo("UP");
+        webTestClient.get().uri("/readyz").exchange().expectStatus().isOk()
+                .expectBody().jsonPath("$.status").isEqualTo("UP");
+    }
+
+    @Test
+    void probeAliases_shouldOnlyBeOpenedForReading() {
+        webTestClient.post().uri("/livez").exchange().expectStatus().isUnauthorized();
+        webTestClient.post().uri("/readyz").exchange().expectStatus().isUnauthorized();
     }
 
     @Test

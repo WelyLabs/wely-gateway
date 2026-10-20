@@ -36,7 +36,7 @@ public class ProblemAuthenticationEntryPoint implements ServerAuthenticationEntr
     public Mono<Void> commence(ServerWebExchange exchange, AuthenticationException ex) {
         // An expired token is routine, and a client retrying with one would flood WARN: DEBUG.
         log.debug("Authentication required {} on {} (request {})",
-                CODE, exchange.getRequest().getPath(), exchange.getRequest().getId());
+                CODE, exchange.getRequest().getPath(), RequestIds.of(exchange));
 
         ServerWebExchange headersOnly = ProblemWriter.holdingCompletion(exchange);
 

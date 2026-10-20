@@ -34,7 +34,7 @@ public class ProblemAccessDeniedHandler implements ServerAccessDeniedHandler {
     public Mono<Void> handle(ServerWebExchange exchange, AccessDeniedException denied) {
         // Rare by construction, and worth seeing when it happens.
         log.warn("Access denied {} on {} (request {})",
-                CODE, exchange.getRequest().getPath(), exchange.getRequest().getId());
+                CODE, exchange.getRequest().getPath(), RequestIds.of(exchange));
 
         ServerWebExchange headersOnly = ProblemWriter.holdingCompletion(exchange);
 

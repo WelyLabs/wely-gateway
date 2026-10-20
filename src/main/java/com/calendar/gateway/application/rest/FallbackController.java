@@ -2,6 +2,7 @@ package com.calendar.gateway.application.rest;
 
 import com.calendar.gateway.exception.GlobalErrorHandler;
 import com.calendar.gateway.exception.Problems;
+import com.calendar.gateway.exception.RequestIds;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -69,7 +70,7 @@ public class FallbackController {
                       RequestMethod.PATCH, RequestMethod.DELETE})
     public Mono<ResponseEntity<ProblemDetail>> fallback(@PathVariable String service,
                                                         ServerWebExchange exchange) {
-        String requestId = exchange.getRequest().getId();
+        String requestId = RequestIds.of(exchange);
         String path = originalPath(exchange);
 
         // DEBUG, not ERROR: while a breaker is open every request lands here, and one ERROR per
