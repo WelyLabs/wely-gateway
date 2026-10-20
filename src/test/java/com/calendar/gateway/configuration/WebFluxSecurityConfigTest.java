@@ -6,18 +6,31 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.cloud.gateway.handler.RoutePredicateHandlerMapping;
+import org.springframework.boot.test.web.server.LocalManagementPort;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
+import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
+import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
@@ -26,9 +39,40 @@ import static org.mockito.Mockito.mock;
 import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockJwt;
 import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.springSecurity;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+// DEFINED_PORT with the management port fixed up front, rather than RANDOM_PORT: the gateway only
+// skips routing on the management port when it knows that port's number, as in production (9081).
+// A random management port (0) would hide that. The main port stays random (server.port=0).
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.DEFINED_PORT)
 @ActiveProfiles("test")
 class WebFluxSecurityConfigTest {
+
+    private static final int MANAGEMENT_PORT = freePort();
+
+    @DynamicPropertySource
+    static void managementPort(DynamicPropertyRegistry registry) {
+        registry.add("management.server.port", () -> MANAGEMENT_PORT);
+    }
+
+    private static int freePort() {
+        try (ServerSocket socket = new ServerSocket(0)) {
+            return socket.getLocalPort();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    @LocalServerPort
+    private int serverPort;
+
+    @LocalManagementPort
+    private int managementPort;
+
+    private static WebTestClient onPort(int port) {
+        return WebTestClient.bindToServer()
+                .baseUrl("http://localhost:" + port)
+                .responseTimeout(Duration.ofSeconds(30))
+                .build();
+    }
 
     private static final String CLIENT_REQUEST_ID = "client-chosen-request-id";
 
@@ -179,36 +223,99 @@ class WebFluxSecurityConfigTest {
                 .jsonPath("$.requestId").isNotEmpty();
     }
 
-    // --- actuator: the probes are open, nothing else is served -------------------------------
+    // --- two ports: probes and API on 8081, actuator on the management port only ---------------
 
     @Test
-    void probes_shouldAnswerWithoutAToken() {
-        webTestClient.get().uri("/actuator/health/liveness").exchange().expectStatus().isOk();
-        webTestClient.get().uri("/actuator/health/readiness").exchange().expectStatus().isOk();
-        // The aliases outside /actuator, for when actuator moves to a management port.
-        webTestClient.get().uri("/livez").exchange().expectStatus().isOk()
+    void probes_shouldAnswerOnTheMainPortWithoutAToken() {
+        // Where the manifests probe: /livez and /readyz on the main port, not under /actuator.
+        onPort(serverPort).get().uri("/livez").exchange().expectStatus().isOk()
                 .expectBody().jsonPath("$.status").isEqualTo("UP");
-        webTestClient.get().uri("/readyz").exchange().expectStatus().isOk()
+        onPort(serverPort).get().uri("/readyz").exchange().expectStatus().isOk()
                 .expectBody().jsonPath("$.status").isEqualTo("UP");
     }
 
     @Test
     void probeAliases_shouldOnlyBeOpenedForReading() {
-        webTestClient.post().uri("/livez").exchange().expectStatus().isUnauthorized();
-        webTestClient.post().uri("/readyz").exchange().expectStatus().isUnauthorized();
+        onPort(serverPort).post().uri("/livez").exchange().expectStatus().isUnauthorized();
+        onPort(serverPort).post().uri("/readyz").exchange().expectStatus().isUnauthorized();
     }
 
     @Test
-    void actuator_shouldServeNeitherMetricsNorInternals() {
-        // This port is the one the tunnel reaches: no prometheus, no env, even with a token.
-        for (String path : new String[] {"/actuator/prometheus", "/actuator/env", "/actuator/heapdump"}) {
-            webTestClient.get().uri(path)
-                    .exchange()
-                    .expectStatus().isUnauthorized();
-            webTestClient.mutateWith(mockJwt())
-                    .get().uri(path)
-                    .exchange()
-                    .expectStatus().isNotFound();
+    void actuator_shouldNotBeServedOnTheMainPort() {
+        // The port the tunnel reaches. Without a token, 401 like any path; with one, nothing there.
+        for (String path : new String[] {"/actuator/prometheus", "/actuator/health", "/actuator/health/liveness",
+                "/actuator/info", "/actuator/env"}) {
+            onPort(serverPort).get().uri(path).exchange().expectStatus().isUnauthorized();
+            webTestClient.mutateWith(mockJwt()).get().uri(path).exchange().expectStatus().isNotFound();
         }
+    }
+
+    @Test
+    void prometheus_shouldAnswerOnTheManagementPortWithoutAToken() {
+        // Count something first: a fallback through the real breaker (closed test port), and an
+        // unexpected failure (a downstream outside the breaker refusing the connection).
+        webTestClient.mutateWith(mockJwt()).get().uri("/api/v1/social-service/anything")
+                .exchange().expectStatus().isEqualTo(503);
+        webTestClient.mutateWith(mockJwt()).get().uri("/api/v1/notifications-service/notifications/stream")
+                .exchange().expectStatus().isEqualTo(500);
+
+        onPort(managementPort).get().uri("/actuator/prometheus")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .value(body -> assertThat(body)
+                        .contains("wely_gateway_fallbacks_total{service=\"social\"}")
+                        .contains("wely_errors_technical_total{code=\"GTW-TEC-001\"}")
+                        .contains("wely_errors_technical_total{code=\"GTW-TEC-000\"}"));
+    }
+
+    @Test
+    void probes_shouldAlsoAnswerOnTheManagementPort() {
+        onPort(managementPort).get().uri("/actuator/health/liveness").exchange().expectStatus().isOk();
+        onPort(managementPort).get().uri("/actuator/health/readiness").exchange().expectStatus().isOk();
+    }
+
+    @Test
+    void managementPort_shouldDenyEverythingElse() {
+        // Only GET on the scrape and the probes: the security chain of the management port
+        // denies the rest, exposed or not — env and info alike, writes, and API paths.
+        for (String path : new String[] {"/actuator/env", "/actuator/heapdump", "/actuator/info",
+                "/actuator/health", "/api/v1/user-service/profile", "/fallback/users"}) {
+            onPort(managementPort).get().uri(path).exchange().expectStatus().isUnauthorized();
+        }
+        onPort(managementPort).post().uri("/actuator/prometheus").exchange().expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void managementPort_shouldNeverBeSeenByTheRoutePredicates() {
+        // Behind the security chain, a second guard: the gateway's own handler mapping returns no
+        // route for a request received on the management port, so nothing there is ever proxied.
+        RoutePredicateHandlerMapping routes = context.getBean(RoutePredicateHandlerMapping.class);
+        MockServerWebExchange onManagement = MockServerWebExchange.from(MockServerHttpRequest
+                .get("http://localhost:" + managementPort + "/api/v1/user-service/profile")
+                .localAddress(new InetSocketAddress("127.0.0.1", managementPort)));
+        MockServerWebExchange onMain = MockServerWebExchange.from(MockServerHttpRequest
+                .get("http://localhost:" + serverPort + "/api/v1/user-service/profile")
+                .localAddress(new InetSocketAddress("127.0.0.1", serverPort)));
+
+        StepVerifier.create(routes.getHandler(onManagement)).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(routes.getHandler(onMain)).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
+    }
+
+    @Test
+    void onManagementPort_shouldMatchOnlyTheManagementPort() {
+        ServerWebExchangeMatcher matcher = WebFluxSecurityConfig.onManagementPort(context.getEnvironment());
+
+        StepVerifier.create(matcher.matches(MockServerWebExchange.from(MockServerHttpRequest.get("/actuator/prometheus")
+                        .localAddress(new InetSocketAddress("127.0.0.1", managementPort)))))
+                .assertNext(result -> assertThat(result.isMatch()).isTrue())
+                .expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(matcher.matches(MockServerWebExchange.from(MockServerHttpRequest.get("/actuator/prometheus")
+                        .localAddress(new InetSocketAddress("127.0.0.1", serverPort)))))
+                .assertNext(result -> assertThat(result.isMatch()).isFalse())
+                .expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(matcher.matches(MockServerWebExchange.from(MockServerHttpRequest.get("/actuator/prometheus"))))
+                .assertNext(result -> assertThat(result.isMatch()).isFalse())
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 }
