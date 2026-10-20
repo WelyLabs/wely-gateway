@@ -1,7 +1,13 @@
 package com.calendar.gateway.application.rest;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
@@ -25,13 +31,15 @@ import static org.springframework.cloud.gateway.support.ServerWebExchangeUtils.G
 import static org.springframework.cloud.gateway.support.ServerWebExchangeUtils.GATEWAY_PREDICATE_PATH_CONTAINER_ATTR;
 
 /**
- * Covers {@link FallbackController#fallback}.
+ * Covers {@link FallbackController#fallback}: the problem it answers, what it counts, and that
+ * it no longer logs one ERROR per request.
  */
 class FallbackControllerTest {
 
     private static final String ORIGINAL_PATH = "/api/v1/user-service/profile";
 
-    private final FallbackController controller = new FallbackController();
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    private final FallbackController controller = new FallbackController(meterRegistry);
 
     /** A forwarded exchange as the breaker leaves it: the request path is the fallback's. */
     private static MockServerWebExchange forwardedExchange(String service) {
@@ -46,7 +54,7 @@ class FallbackControllerTest {
         StepVerifier.create(controller.fallback("users", forwardedExchange("users")))
                 .assertNext(response ->
                         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -60,7 +68,7 @@ class FallbackControllerTest {
                     assertThat(problem.getDetail()).contains("chat");
                     assertThat(problem.getProperties()).containsEntry("service", "chat");
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -76,7 +84,7 @@ class FallbackControllerTest {
                             .isEqualTo(URI.create("https://welylabs.app/problems/gtw-tec-001"));
                     assertThat(problem.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE.value());
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -92,7 +100,7 @@ class FallbackControllerTest {
                     Instant stamped = Instant.parse((String) problem.getProperties().get("timestamp"));
                     assertThat(stamped).isBetween(before, Instant.now().plus(Duration.ofSeconds(1)));
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -109,7 +117,7 @@ class FallbackControllerTest {
                             .isNotBlank()
                             .isEqualTo(exchange.getRequest().getId());
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -129,7 +137,7 @@ class FallbackControllerTest {
                     assertThat(response.getBody()).isNotNull();
                     assertThat(response.getBody().getInstance()).isEqualTo(URI.create(ORIGINAL_PATH));
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -144,7 +152,7 @@ class FallbackControllerTest {
                     assertThat(response.getBody()).isNotNull();
                     assertThat(response.getBody().getInstance()).isEqualTo(URI.create(ORIGINAL_PATH));
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -158,7 +166,7 @@ class FallbackControllerTest {
                     assertThat(response.getBody()).isNotNull();
                     assertThat(response.getBody().getInstance()).isEqualTo(URI.create("/fallback/chat"));
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -172,7 +180,7 @@ class FallbackControllerTest {
                     assertThat(entity.getBody()).isNotNull();
                     assertThat(entity.getBody().getStatus()).isEqualTo(entity.getStatusCode().value());
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -200,6 +208,47 @@ class FallbackControllerTest {
                             .isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
                     assertThat(response.getBody()).isInstanceOf(ProblemDetail.class);
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
+    }
+
+    @Test
+    @DisplayName("counts each fallback per service, and as a technical error under its code")
+    void fallback_shouldCountEachFallback() {
+        StepVerifier.create(controller.fallback("users", forwardedExchange("users")))
+                .expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(controller.fallback("users", forwardedExchange("users")))
+                .expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(controller.fallback("chat", forwardedExchange("chat")))
+                .expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(meterRegistry.get("wely.gateway.fallbacks").tag("service", "users").counter().count())
+                .isEqualTo(2);
+        assertThat(meterRegistry.get("wely.gateway.fallbacks").tag("service", "chat").counter().count())
+                .isEqualTo(1);
+        assertThat(meterRegistry.get("wely.errors.technical").tag("code", "GTW-TEC-001").counter().count())
+                .isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("logs each fallback at DEBUG only: the outage is logged once, by the breaker transition")
+    void fallback_shouldLogAtDebugOnly() {
+        Logger logger = (Logger) LoggerFactory.getLogger(FallbackController.class);
+        Level previous = logger.getLevel();
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        logger.setLevel(Level.DEBUG);
+        try {
+            StepVerifier.create(controller.fallback("events", forwardedExchange("events")))
+                    .expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
+        } finally {
+            logger.detachAppender(appender);
+            logger.setLevel(previous);
+        }
+
+        assertThat(appender.list).singleElement().satisfies(event -> {
+            assertThat(event.getLevel()).isEqualTo(Level.DEBUG);
+            assertThat(event.getFormattedMessage()).contains("GTW-TEC-001", "events", "(request ");
+        });
     }
 }

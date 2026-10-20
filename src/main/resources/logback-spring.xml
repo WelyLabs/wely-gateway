@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Boot's console logging, with one change: the password of a URL (scheme://user:password@host) is
+masked on every line, message and stack trace alike.
+
+Why: the gateway writes URLs into its logs in several places — a route's target URI in the
+"Mapping [...] to Route{...}" line when org.springframework.cloud.gateway is at DEBUG (the dev
+profile sets it), reactor-netty's request lines at DEBUG, and the request URL that a WebClient
+error answer carries in its message and in the "Request to GET ..." checkpoint of its stack
+trace. No route URI is meant to carry credentials (the services authenticate with the caller's
+JWT, internal secrets travel in headers), so this is a safety net for a mistyped *_API_URL, not
+a feature. Same configuration as the services.
+
+The whole Boot pattern is wrapped in %replace, then %nopex stops logback from appending a second,
+unmasked stack trace of its own.
+-->
+<configuration>
+	<include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+	<property name="CONSOLE_LOG_PATTERN"
+			  value="%replace(${CONSOLE_LOG_PATTERN}){'(://[^/\s:@]+:)[^/\s@]+@', '$1****@'}%nopex"/>
+
+	<include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+	<root level="INFO">
+		<appender-ref ref="CONSOLE"/>
+	</root>
+</configuration>

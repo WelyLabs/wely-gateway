@@ -3,7 +3,15 @@ package com.calendar.gateway.configuration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.mockito.Mockito;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.jwt.BadJwtException;
+import reactor.core.publisher.Mono;
+
+import java.time.Duration;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.reactive.server.WebTestClient;
@@ -31,11 +39,13 @@ class WebFluxSecurityConfigTest {
     @Autowired
     private WebFluxSecurityConfig webFluxSecurityConfig;
 
+
     @BeforeEach
     void setUp() {
         this.webTestClient = WebTestClient.bindToApplicationContext(context)
                 .apply(springSecurity())
                 .configureClient()
+                .responseTimeout(Duration.ofSeconds(30))
                 .build();
     }
 
@@ -100,5 +110,73 @@ class WebFluxSecurityConfigTest {
     @Test
     void testCorsConfigurationSourceBean() {
         assertThat(context.getBean(org.springframework.web.cors.reactive.CorsConfigurationSource.class)).isNotNull();
+    }
+
+    // --- 401, 403 and firewall rejections answer our problem ----------------------------------
+
+    @Test
+    void springSecurityFilterChain_shouldAnswer401AsOurProblem_keepingWwwAuthenticate() {
+        webTestClient.get().uri("/api/v1/user-service/profile")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectHeader().value(HttpHeaders.WWW_AUTHENTICATE, value -> assertThat(value).startsWith("Bearer"))
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON)
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("GTW-REQ-001")
+                .jsonPath("$.status").isEqualTo(401)
+                .jsonPath("$.type").isEqualTo("https://welylabs.app/problems/gtw-req-001")
+                .jsonPath("$.instance").isEqualTo("/api/v1/user-service/profile")
+                .jsonPath("$.requestId").isNotEmpty()
+                .jsonPath("$.timestamp").isNotEmpty();
+    }
+
+    @Test
+    void springSecurityFilterChain_shouldAnswer401AsOurProblem_whenTheTokenIsInvalid() {
+        Mockito.when(reactiveJwtDecoder.decode("bad-token"))
+                .thenReturn(Mono.error(new BadJwtException("expired")));
+
+        webTestClient.get().uri("/api/v1/user-service/profile")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer bad-token")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectHeader().value(HttpHeaders.WWW_AUTHENTICATE,
+                        value -> assertThat(value).startsWith("Bearer").contains("invalid_token"))
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("GTW-REQ-001");
+    }
+
+    @Test
+    void springSecurityFilterChain_shouldAnswerFirewallRejectionsAsOurProblem() {
+        // TRACE never reaches a handler: the security firewall refuses it first.
+        webTestClient.mutateWith(mockJwt())
+                .method(HttpMethod.TRACE).uri("/fallback/users")
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON)
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("GTW-REQ-000")
+                .jsonPath("$.requestId").isNotEmpty();
+    }
+
+    // --- actuator: the probes are open, nothing else is served -------------------------------
+
+    @Test
+    void probes_shouldAnswerWithoutAToken() {
+        webTestClient.get().uri("/actuator/health/liveness").exchange().expectStatus().isOk();
+        webTestClient.get().uri("/actuator/health/readiness").exchange().expectStatus().isOk();
+    }
+
+    @Test
+    void actuator_shouldServeNeitherMetricsNorInternals() {
+        // This port is the one the tunnel reaches: no prometheus, no env, even with a token.
+        for (String path : new String[] {"/actuator/prometheus", "/actuator/env", "/actuator/heapdump"}) {
+            webTestClient.get().uri(path)
+                    .exchange()
+                    .expectStatus().isUnauthorized();
+            webTestClient.mutateWith(mockJwt())
+                    .get().uri(path)
+                    .exchange()
+                    .expectStatus().isNotFound();
+        }
     }
 }

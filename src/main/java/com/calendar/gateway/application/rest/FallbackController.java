@@ -1,5 +1,8 @@
 package com.calendar.gateway.application.rest;
 
+import com.calendar.gateway.exception.GlobalErrorHandler;
+import com.calendar.gateway.exception.Problems;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -14,7 +17,6 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
-import java.time.Instant;
 import java.util.Set;
 
 import static org.springframework.cloud.gateway.support.ServerWebExchangeUtils.GATEWAY_ORIGINAL_REQUEST_URL_ATTR;
@@ -24,9 +26,10 @@ import static org.springframework.cloud.gateway.support.ServerWebExchangeUtils.G
  * What a caller gets when a service's circuit breaker is open.
  *
  * <p>Answers {@link HttpStatus#SERVICE_UNAVAILABLE} as a {@link ProblemDetail}, in the same
- * RFC 7807 shape as every service behind the gateway — same {@code type} namespace, same
- * {@code code}, {@code timestamp} and {@code requestId} properties — so a client has one error
- * format to parse and branches on {@code code} rather than special-casing outages.
+ * RFC 7807 shape as every service behind the gateway — built by {@link Problems}, so same
+ * {@code type} namespace, same {@code code}, {@code timestamp} and {@code requestId} properties —
+ * so a client has one error format to parse and branches on {@code code} rather than
+ * special-casing outages.
  *
  * <p>503 and not 500: the distinction is the whole point of the breaker. The request was never
  * attempted, nothing is corrupt, and retrying later is the correct response — which is what a
@@ -45,8 +48,20 @@ public class FallbackController {
     /** The stable identifier clients branch on. Part of the API contract: never renumber it. */
     static final String CODE = "GTW-TEC-001";
 
-    /** Same namespace as the services' handlers: the code, lowercased. Identifies, not served. */
-    private static final URI TYPE = URI.create("https://welylabs.app/problems/" + CODE.toLowerCase());
+    /** How many requests each service's breaker turned away, tagged by service. */
+    static final String FALLBACKS_METRIC = "wely.gateway.fallbacks";
+
+    /** The tag carrying the service name on {@value #FALLBACKS_METRIC}. */
+    static final String SERVICE_TAG = "service";
+
+    /** The problem property naming the service that did not answer. */
+    static final String SERVICE_PROPERTY = "service";
+
+    private final MeterRegistry meterRegistry;
+
+    public FallbackController(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+    }
 
     @RequestMapping(
             value = "/fallback/{service}",
@@ -57,20 +72,18 @@ public class FallbackController {
         String requestId = exchange.getRequest().getId();
         String path = originalPath(exchange);
 
-        // A downstream service unreachable is an incident someone has to act on: ERROR, as the
-        // services' technical handler does. No stack trace — the breaker already decided, and
-        // the cause (refused connection, timeout, open circuit) adds noise, not information.
-        log.error("Fallback {} for service {} on {} (request {})", CODE, service, path, requestId);
+        // DEBUG, not ERROR: while a breaker is open every request lands here, and one ERROR per
+        // request buried the one line that mattered. The outage is logged once, at ERROR, by
+        // CircuitBreakerTransitionLogger when the breaker opens; how many requests it turned
+        // away is counted below, which is what a count is for.
+        log.debug("Fallback {} for service {} on {} (request {})", CODE, service, path, requestId);
+        meterRegistry.counter(FALLBACKS_METRIC, SERVICE_TAG, service).increment();
+        meterRegistry.counter(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC, GlobalErrorHandler.CODE_TAG, CODE)
+                .increment();
 
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.SERVICE_UNAVAILABLE);
-        problem.setType(TYPE);
-        problem.setTitle("Service unavailable");
-        problem.setDetail("The %s service is not responding. Try again shortly.".formatted(service));
-        problem.setInstance(URI.create(path));
-        problem.setProperty("code", CODE);
-        problem.setProperty("timestamp", Instant.now().toString());
-        problem.setProperty("requestId", requestId);
-        problem.setProperty("service", service);
+        ProblemDetail problem = Problems.of(HttpStatus.SERVICE_UNAVAILABLE, CODE, "Service unavailable",
+                "The %s service is not responding. Try again shortly.".formatted(service), path, exchange);
+        problem.setProperty(SERVICE_PROPERTY, service);
 
         return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .contentType(MediaType.APPLICATION_PROBLEM_JSON)

@@ -1,5 +1,6 @@
 package com.calendar.gateway.configuration;
 
+import com.calendar.gateway.exception.TooManyRequestsProblemFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.route.RouteLocator;
 import org.springframework.cloud.gateway.route.builder.GatewayFilterSpec;
@@ -24,7 +25,9 @@ import java.util.function.Function;
  * <h2>Filter order on a REST route</h2>
  *
  * <ol>
- *   <li><b>Rate limiter</b> first, so a caller flooding the gateway is turned away before
+ *   <li><b>{@code TooManyRequestsProblemFilter}</b>, which only gives the limiter's 429 a
+ *       problem body ({@code GTW-REQ-003}) — the limiter itself has no hook for one.</li>
+ *   <li><b>Rate limiter</b> next, so a caller flooding the gateway is turned away before
  *       anything downstream is touched — including the circuit breaker, whose failure budget
  *       would otherwise be spent on traffic that should never have been forwarded.</li>
  *   <li><b>Circuit breaker</b>, which stops sending requests to a service that is failing and
@@ -55,9 +58,11 @@ public class RouteConfig {
 
     private final RateLimiter<?> rateLimiter;
     private final KeyResolver keyResolver;
+    private final TooManyRequestsProblemFilter tooManyRequestsProblemFilter;
 
     public RouteConfig(RateLimiter<?> rateLimiter,
                        KeyResolver keyResolver,
+                       TooManyRequestsProblemFilter tooManyRequestsProblemFilter,
                        @Value("${users.api.url}") String usersApiUrl,
                        @Value("${social.api.url}") String socialApiUrl,
                        @Value("${chat.api.url}") String chatApiUrl,
@@ -66,6 +71,7 @@ public class RouteConfig {
                        @Value("${notifications.api.url}") String notificationsApiUrl) {
         this.rateLimiter = rateLimiter;
         this.keyResolver = keyResolver;
+        this.tooManyRequestsProblemFilter = tooManyRequestsProblemFilter;
         this.usersApiUrl = usersApiUrl;
         this.socialApiUrl = socialApiUrl;
         this.chatApiUrl = chatApiUrl;
@@ -134,6 +140,8 @@ public class RouteConfig {
      */
     private Function<GatewayFilterSpec, UriSpec> proxyFilters(String service) {
         return f -> f
+                // In front of the limiter, so its bare 429 leaves with our problem as a body.
+                .filter(tooManyRequestsProblemFilter)
                 .requestRateLimiter(config -> config
                         .setRateLimiter(rateLimiter)
                         .setKeyResolver(keyResolver))

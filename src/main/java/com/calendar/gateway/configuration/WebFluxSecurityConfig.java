@@ -1,5 +1,7 @@
 package com.calendar.gateway.configuration;
 
+import com.calendar.gateway.exception.ProblemAccessDeniedHandler;
+import com.calendar.gateway.exception.ProblemAuthenticationEntryPoint;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -31,7 +33,9 @@ public class WebFluxSecurityConfig {
     private String corsAllowedOrigin;
 
     @Bean
-    public SecurityWebFilterChain springSecurityFilterChain(ServerHttpSecurity http) {
+    public SecurityWebFilterChain springSecurityFilterChain(ServerHttpSecurity http,
+                                                           ProblemAuthenticationEntryPoint authenticationEntryPoint,
+                                                           ProblemAccessDeniedHandler accessDeniedHandler) {
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .cors(Customizer.withDefaults())
@@ -51,7 +55,16 @@ public class WebFluxSecurityConfig {
                         .pathMatchers("/v3/api-docs", "/v3/api-docs/**", "/swagger-ui/**",
                                       "/swagger-ui.html", "/webjars/swagger-ui/**").permitAll()
                         .anyExchange().authenticated())
-                .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
+                // 401 and 403 answer our problem (GTW-REQ-001, GTW-REQ-002) rather than an empty
+                // body. Set in both places: the resource server uses its own for a token that
+                // fails validation, exceptionHandling covers a request that carries none.
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler))
+                .oauth2ResourceServer(oauth2 -> oauth2
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler)
+                        .jwt(Customizer.withDefaults()))
                 .build();
     }
 

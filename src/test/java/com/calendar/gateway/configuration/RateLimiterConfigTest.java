@@ -18,6 +18,8 @@ import reactor.test.StepVerifier;
 import java.net.InetSocketAddress;
 import java.util.List;
 
+import java.time.Duration;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -86,7 +88,7 @@ class RateLimiterConfigTest {
         StepVerifier.create(resolver.resolve(exchangeFrom("10.0.0.7"))
                         .contextWrite(ReactiveSecurityContextHolder.withAuthentication(authentication)))
                 .expectNext("user-42")
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -96,7 +98,7 @@ class RateLimiterConfigTest {
 
         StepVerifier.create(resolver.resolve(exchangeFrom("10.0.0.7")))
                 .expectNext("10.0.0.7")
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -108,7 +110,7 @@ class RateLimiterConfigTest {
         StepVerifier.create(resolver.resolve(exchangeFrom("10.0.0.8"))
                         .contextWrite(ReactiveSecurityContextHolder.withAuthentication(authentication)))
                 .expectNext("10.0.0.8")
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -122,6 +124,6 @@ class RateLimiterConfigTest {
 
         StepVerifier.create(resolver.resolve(withoutAddress))
                 .expectNext("unknown")
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 }

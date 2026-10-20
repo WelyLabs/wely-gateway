@@ -1,11 +1,13 @@
 package com.calendar.gateway.configuration;
 
+import com.calendar.gateway.exception.TooManyRequestsProblemFilter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
+import org.springframework.cloud.gateway.filter.OrderedGatewayFilter;
 import org.springframework.cloud.gateway.route.Route;
 import org.springframework.cloud.gateway.route.RouteLocator;
 import org.springframework.http.HttpStatus;
@@ -61,21 +63,32 @@ class RouteConfigTest {
                 .expectNext("calendar-events-api")
                 .expectNext("notifications-stream")
                 .expectNext("wely-notifications")
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
-    @DisplayName("every REST route carries the four proxy filters")
+    @DisplayName("every REST route carries the five proxy filters")
     void configureRoute_shouldApplyTheProxyFiltersToEveryRestRoute() {
-        // Rate limiter, circuit breaker, stripPrefix, retry. Asserted on each route rather
+        // 429 problem body, rate limiter, circuit breaker, stripPrefix, retry. Asserted on each route rather
         // than on one, because the point of extracting proxyFilters was that a route could no
         // longer be forgotten.
         for (String id : new String[] {"calendar-users-api", "calendar-social-api",
                 "calendar-chat-api", "calendar-events-api", "wely-notifications"}) {
             StepVerifier.create(route(id).map(candidate -> candidate.getFilters().size()))
-                    .assertNext(count -> assertThat(count).as("filters on %s", id).isEqualTo(4))
-                    .verifyComplete();
+                    .assertNext(count -> assertThat(count).as("filters on %s", id).isEqualTo(5))
+                    .expectComplete().verify(Duration.ofSeconds(10));
         }
+    }
+
+    @Test
+    @DisplayName("the 429 problem filter comes first, in front of the rate limiter it dresses")
+    void configureRoute_shouldPutTheTooManyRequestsFilterInFrontOfTheLimiter() {
+        StepVerifier.create(route("calendar-users-api").map(candidate -> candidate.getFilters().getFirst()))
+                .assertNext(first -> assertThat(first)
+                        .isInstanceOfSatisfying(OrderedGatewayFilter.class, ordered ->
+                                assertThat(ordered.getDelegate()).isInstanceOf(TooManyRequestsProblemFilter.class)))
+                .expectComplete()
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -86,7 +99,7 @@ class RouteConfigTest {
         // filter reads the exchange in a way that breaks the upgrade.
         StepVerifier.create(route("chat-rsocket-route").map(candidate -> candidate.getFilters().size()))
                 .expectNext(0)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -96,7 +109,7 @@ class RouteConfigTest {
         // would cut it. One filter, stripPrefix.
         StepVerifier.create(route("events-poll-stream").map(candidate -> candidate.getFilters().size()))
                 .expectNext(1)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -104,7 +117,7 @@ class RouteConfigTest {
     void configureRoute_shouldLeaveTheNotificationsStreamOutOfTheBreaker() {
         StepVerifier.create(route("notifications-stream").map(candidate -> candidate.getFilters().size()))
                 .expectNext(1)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -112,10 +125,10 @@ class RouteConfigTest {
     void configureRoute_shouldTargetTheConfiguredUris() {
         StepVerifier.create(route("calendar-users-api").map(candidate -> candidate.getUri().toString()))
                 .expectNext("http://localhost:9999")
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         StepVerifier.create(route("chat-rsocket-route").map(candidate -> candidate.getUri().toString()))
                 .expectNext("ws://localhost:9999")
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -147,7 +160,7 @@ class RouteConfigTest {
     void configureRoute_shouldGiveTheInternalBlockOnlyTheStatusFilter() {
         StepVerifier.create(route(RouteConfig.INTERNAL_PATHS_ROUTE).map(candidate -> candidate.getFilters().size()))
                 .expectNext(1)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
