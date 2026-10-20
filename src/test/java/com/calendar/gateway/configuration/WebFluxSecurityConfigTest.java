@@ -270,6 +270,27 @@ class WebFluxSecurityConfigTest {
     }
 
     @Test
+    void prometheus_shouldPublishTheLatencyBucketsAndTheBreakerState() {
+        // One request through the real breaker: a timed exchange, and a breaker that opens.
+        webTestClient.mutateWith(mockJwt()).get().uri("/api/v1/events-service/events")
+                .exchange().expectStatus().isEqualTo(503);
+
+        onPort(managementPort).get().uri("/actuator/prometheus")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .value(body -> {
+                    // The SLO buckets on the request timer, the 250 ms one among them.
+                    assertThat(body).containsPattern("http_server_requests_seconds_bucket\\{[^}]*le=\"0\\.25\"[^}]*} ");
+                    assertThat(body).containsPattern("http_server_requests_seconds_bucket\\{[^}]*le=\"5\\.0\"[^}]*} ");
+                    // Bound by the circuit breaker starter (resilience4j-micrometer): one series
+                    // per state, 1 for the current one. The test profile opens on the first failure.
+                    assertThat(body).contains(
+                            "resilience4j_circuitbreaker_state{group=\"eventsCircuitBreaker\",name=\"eventsCircuitBreaker\",state=\"open\"} 1.0");
+                });
+    }
+
+    @Test
     void probes_shouldAlsoAnswerOnTheManagementPort() {
         onPort(managementPort).get().uri("/actuator/health/liveness").exchange().expectStatus().isOk();
         onPort(managementPort).get().uri("/actuator/health/readiness").exchange().expectStatus().isOk();
