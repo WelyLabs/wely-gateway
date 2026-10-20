@@ -133,6 +133,10 @@ class RouteConfigTest {
                 .expectBody()
                 .jsonPath("$.status").isEqualTo(503)
                 .jsonPath("$.title").isEqualTo("Service unavailable")
+                .jsonPath("$.code").isEqualTo("GTW-TEC-001")
+                // The path the client called, not the internal /fallback/users forward.
+                .jsonPath("$.instance").isEqualTo("/api/v1/user-service/profile")
+                .jsonPath("$.requestId").isNotEmpty()
                 .jsonPath("$.service").isEqualTo("users");
     }
 
