@@ -51,8 +51,8 @@ public class RateLimiterConfig {
      * <p>The JWT subject, not the IP: behind a Cloudflare tunnel every request arrives from the
      * same handful of addresses, so an IP quota would be shared by everyone and one heavy user
      * would throttle the rest. The address is only the fallback for a request that carries no
-     * token — which, past the security filter chain, means little more than the actuator
-     * endpoints.
+     * token — past the security filter chain, the calendar files and the Auth0 Action's
+     * provisioning call, which therefore share one quota per tunnel address.
      *
      * <p>Never returns an empty {@code Mono}: the gateway reads that as "no key" and answers
      * 403, which would turn an unresolvable key into a rejected request.

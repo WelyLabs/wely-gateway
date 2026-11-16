@@ -102,6 +102,10 @@ public class WebFluxSecurityConfig {
                         // An event's .ics, opened by a calendar app that carries no token: the
                         // short-lived link in the path is checked by wely-events. Reading only.
                         .pathMatchers(HttpMethod.GET, "/api/v1/events-service/public/calendar/*").permitAll()
+                        // Called by the Auth0 post-login Action before any token exists, to provision
+                        // the user's businessId; wely-users checks its X-Internal-Secret. This method
+                        // and path only.
+                        .pathMatchers(HttpMethod.POST, "/api/v1/user-service/profile/provision").permitAll()
                         // OpenAPI. These paths are not routed by the gateway — it forwards
                         // /api/v1/<service>/** and /rsocket only — so opening them here makes
                         // the documentation reachable in-cluster and in dev, and nowhere else.

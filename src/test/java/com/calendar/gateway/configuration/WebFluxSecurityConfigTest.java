@@ -124,6 +124,35 @@ class WebFluxSecurityConfigTest {
     }
 
     @Test
+    void provisioning_shouldPassSecurityWithoutAToken() {
+        // The Auth0 Action has no JWT yet: past security, whatever wely-users answers, never a 401.
+        webTestClient.post().uri("/api/v1/user-service/profile/provision")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{}")
+                .exchange()
+                .expectStatus().value(status -> assertThat(status).isNotEqualTo(401));
+    }
+
+    @Test
+    void provisioning_shouldOnlyOpenThatMethodAndPath() {
+        webTestClient.get().uri("/api/v1/user-service/profile/provision")
+                .exchange()
+                .expectStatus().isUnauthorized();
+        webTestClient.put().uri("/api/v1/user-service/profile/provision")
+                .exchange()
+                .expectStatus().isUnauthorized();
+        webTestClient.post().uri("/api/v1/user-service/profile/provision/extra")
+                .exchange()
+                .expectStatus().isUnauthorized();
+        webTestClient.post().uri("/api/v1/user-service/profile")
+                .exchange()
+                .expectStatus().isUnauthorized();
+        webTestClient.get().uri("/api/v1/user-service/profile/resolve/auth0-abc")
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
     void testProtectedEndpoints() {
         // Any other endpoint should be unauthorized without token
         webTestClient.get().uri("/unmapped-path")

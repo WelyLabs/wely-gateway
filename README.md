@@ -120,6 +120,8 @@ RSocket over WebSocket n'est pas du HTTP requête/réponse : la gateway relaie l
         .pathMatchers(HttpMethod.OPTIONS).permitAll()   // préflight
         .pathMatchers("/rsocket/**").permitAll()        // auth déléguée à wely-chat
         .pathMatchers("/public/**").permitAll()
+        // appelé par l'Action Auth0 avant qu'aucun jeton n'existe ; wely-users vérifie X-Internal-Secret
+        .pathMatchers(HttpMethod.POST, "/api/v1/user-service/profile/provision").permitAll()
         .anyExchange().authenticated())
 .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
 ```
@@ -128,16 +130,20 @@ Le principe est **deny by default** : toute route non listée exige un JWT valid
 
 ### Validation du JWT derrière un ingress
 
-Comme tous les services de la plateforme, la gateway dissocie deux URL Keycloak :
+Comme tous les services de la plateforme, la gateway configure séparément l'URL des clés et
+l'émetteur attendu. Le fournisseur d'identité est **Auth0** : les deux sont publics, et les
+variables gardent leur ancien nom `KEYCLOAK_*` jusqu'au renommage en `OIDC_*`.
 
 ```properties
-# récupération des clés : service interne au cluster, pas de sortie réseau
+# récupération des clés : https://<tenant>/.well-known/jwks.json
 spring.security.oauth2.resourceserver.jwt.jwk-set-uri=${KEYCLOAK_INTERNAL_JWK_SET_URI}
-# validation de l'émetteur : URL publique, celle inscrite dans le claim iss
+# validation de l'émetteur : https://<tenant>/, slash final compris — Spring compare à l'identique
 spring.security.oauth2.resourceserver.jwt.issuer-uri=${KEYCLOAK_ISSUER_URI}
 ```
 
-Sans cette dissociation, soit la validation de l'`iss` échoue — l'URL interne ne correspond pas à celle du token —, soit le service sort du cluster à chaque rotation de clés.
+La dissociation date de Keycloak, dont les clés se lisaient par un service interne au cluster
+alors que l'`iss` portait l'URL publique ; elle reste utile à tout fournisseur placé derrière un
+ingress.
 
 Le décodeur est composé explicitement pour valider à la fois l'émetteur et l'horodatage :
 
@@ -191,8 +197,8 @@ et `/rsocket`.
 | `CHAT_RSOCKET_URL` | URL WebSocket de wely-chat (`ws://…`) |
 | `EVENTS_API_URL` | URL interne de wely-events |
 | `CORS_ALLOWED_ORIGIN` | Origine autorisée (défaut : `https://web.welylabs.app`) |
-| `KEYCLOAK_ISSUER_URI` | Issuer public |
-| `KEYCLOAK_INTERNAL_JWK_SET_URI` | JWKS interne |
+| `KEYCLOAK_ISSUER_URI` | Issuer Auth0 (`https://<tenant>/`, slash final) — nom hérité de Keycloak |
+| `KEYCLOAK_INTERNAL_JWK_SET_URI` | JWKS Auth0 (`https://<tenant>/.well-known/jwks.json`) — nom hérité |
 | `REDIS_HOST` / `REDIS_PORT` | Compteurs de quota (défaut : `localhost:6379`) |
 | `RATE_LIMIT_REPLENISH_RATE` | Débit soutenu par appelant, en req/s (défaut : 20) |
 | `RATE_LIMIT_BURST_CAPACITY` | Rafale autorisée (défaut : 40) |
@@ -211,9 +217,8 @@ Le profil `dev` route vers `localhost` sur les ports 8082 à 8086 et autorise l'
 > `wely-gitops-infra` a été supprimé en novembre 2026 avec les bases qu'il déployait : depuis que
 > PostgreSQL, Neo4j, MongoDB, Kafka et le stockage des photos sont des services managés (Neon,
 > Aura, Atlas, Confluent Cloud, Cloudflare R2), un cluster local n'amorcerait qu'une coquille sans
-> rien à interroger. Pour travailler sur ce service, lance Keycloak par le `docker compose` du
-> dépôt de plateforme et donne-lui, par variables d'environnement, les URI de tes propres
-> instances — les paliers gratuits de ces cinq services suffisent.
+> rien à interroger. Pour travailler sur ce service, pointe-le sur le tenant Auth0 de dev et
+> donne-lui, par variables d'environnement, les URI de tes propres instances — les paliers gratuits de ces cinq services suffisent.
 
 ---
 
