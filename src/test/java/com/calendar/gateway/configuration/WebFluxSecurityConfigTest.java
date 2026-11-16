@@ -33,6 +33,9 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import org.springframework.security.oauth2.jwt.Jwt;
+import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -119,6 +122,35 @@ class WebFluxSecurityConfigTest {
                 .exchange()
                 .expectStatus().isUnauthorized();
         webTestClient.get().uri("/api/v1/events-service/events/e1")
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void provisioning_shouldPassSecurityWithoutAToken() {
+        // The Auth0 Action has no JWT yet: past security, whatever wely-users answers, never a 401.
+        webTestClient.post().uri("/api/v1/user-service/profile/provision")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{}")
+                .exchange()
+                .expectStatus().value(status -> assertThat(status).isNotEqualTo(401));
+    }
+
+    @Test
+    void provisioning_shouldOnlyOpenThatMethodAndPath() {
+        webTestClient.get().uri("/api/v1/user-service/profile/provision")
+                .exchange()
+                .expectStatus().isUnauthorized();
+        webTestClient.put().uri("/api/v1/user-service/profile/provision")
+                .exchange()
+                .expectStatus().isUnauthorized();
+        webTestClient.post().uri("/api/v1/user-service/profile/provision/extra")
+                .exchange()
+                .expectStatus().isUnauthorized();
+        webTestClient.post().uri("/api/v1/user-service/profile")
+                .exchange()
+                .expectStatus().isUnauthorized();
+        webTestClient.get().uri("/api/v1/user-service/profile/resolve/auth0-abc")
                 .exchange()
                 .expectStatus().isUnauthorized();
     }
@@ -338,5 +370,32 @@ class WebFluxSecurityConfigTest {
         StepVerifier.create(matcher.matches(MockServerWebExchange.from(MockServerHttpRequest.get("/actuator/prometheus"))))
                 .assertNext(result -> assertThat(result.isMatch()).isFalse())
                 .expectComplete().verify(Duration.ofSeconds(10));
+    }
+
+    private static final String AUDIENCE_ISSUER = "https://issuer.example/";
+
+    private static Jwt tokenWithAudience(String... audiences) {
+        return Jwt.withTokenValue("token").header("alg", "RS256")
+                .issuer(AUDIENCE_ISSUER).audience(List.of(audiences))
+                .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(60))
+                .build();
+    }
+
+    @Test
+    void jwtValidator_shouldAcceptATokenForAConfiguredAudience() {
+        assertThat(WebFluxSecurityConfig.jwtValidator(AUDIENCE_ISSUER, List.of("wely-api-dev"))
+                .validate(tokenWithAudience("other", "wely-api-dev")).hasErrors()).isFalse();
+    }
+
+    @Test
+    void jwtValidator_shouldRejectATokenForAnotherAudience() {
+        assertThat(WebFluxSecurityConfig.jwtValidator(AUDIENCE_ISSUER, List.of("wely-api-dev"))
+                .validate(tokenWithAudience("wely-api-prod")).hasErrors()).isTrue();
+    }
+
+    @Test
+    void jwtValidator_shouldSkipTheAudienceCheck_whenNoneIsConfigured() {
+        assertThat(WebFluxSecurityConfig.jwtValidator(AUDIENCE_ISSUER, List.of())
+                .validate(tokenWithAudience("wely-api-prod")).hasErrors()).isFalse();
     }
 }

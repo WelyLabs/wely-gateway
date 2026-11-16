@@ -24,6 +24,8 @@ import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 
 import java.net.InetSocketAddress;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Collections;
 
 @Configuration
 @EnableWebFluxSecurity
@@ -34,6 +36,9 @@ public class WebFluxSecurityConfig {
 
     @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}")
     private String internalJwkSetUri;
+
+    @Value("${spring.security.oauth2.resourceserver.jwt.audiences:}")
+    private List<String> audiences = List.of();
 
     @Value("${cors.allowed.origin}")
     private String corsAllowedOrigin;
@@ -102,6 +107,10 @@ public class WebFluxSecurityConfig {
                         // An event's .ics, opened by a calendar app that carries no token: the
                         // short-lived link in the path is checked by wely-events. Reading only.
                         .pathMatchers(HttpMethod.GET, "/api/v1/events-service/public/calendar/*").permitAll()
+                        // Called by the Auth0 post-login Action before any token exists, to provision
+                        // the user's businessId; wely-users checks its X-Internal-Secret. This method
+                        // and path only.
+                        .pathMatchers(HttpMethod.POST, "/api/v1/user-service/profile/provision").permitAll()
                         // OpenAPI. These paths are not routed by the gateway — it forwards
                         // /api/v1/<service>/** and /rsocket only — so opening them here makes
                         // the documentation reachable in-cluster and in dev, and nowhere else.
@@ -125,12 +134,20 @@ public class WebFluxSecurityConfig {
     public ReactiveJwtDecoder jwtDecoder() {
         NimbusReactiveJwtDecoder jwtDecoder = NimbusReactiveJwtDecoder.withJwkSetUri(internalJwkSetUri).build();
 
-        OAuth2TokenValidator<Jwt> issuerValidator = JwtValidators.createDefaultWithIssuer(publicIssuer);
-        OAuth2TokenValidator<Jwt> withTimestamp = new JwtTimestampValidator();
-        OAuth2TokenValidator<Jwt> validator = new DelegatingOAuth2TokenValidator<>(withTimestamp, issuerValidator);
-
-        jwtDecoder.setJwtValidator(validator);
+        jwtDecoder.setJwtValidator(jwtValidator(publicIssuer, audiences));
         return jwtDecoder;
+    }
+
+    /** Timestamps, issuer and audience; declaring our own decoder makes Boot skip its audience check, so it is redone here. */
+    static OAuth2TokenValidator<Jwt> jwtValidator(String issuer, List<String> audiences) {
+        List<OAuth2TokenValidator<Jwt>> validators = new ArrayList<>(
+                List.of(new JwtTimestampValidator(), JwtValidators.createDefaultWithIssuer(issuer)));
+        // An empty list disables the check (local dev), as Boot does.
+        if (!audiences.isEmpty()) {
+            validators.add(new JwtClaimValidator<List<String>>(JwtClaimNames.AUD,
+                    aud -> aud != null && !Collections.disjoint(aud, audiences)));
+        }
+        return new DelegatingOAuth2TokenValidator<>(validators);
     }
 
     @Bean
