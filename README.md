@@ -131,19 +131,19 @@ Le principe est **deny by default** : toute route non listée exige un JWT valid
 ### Validation du JWT derrière un ingress
 
 Comme tous les services de la plateforme, la gateway configure séparément l'URL des clés et
-l'émetteur attendu. Le fournisseur d'identité est **Auth0** : les deux sont publics, et les
-variables gardent leur ancien nom `KEYCLOAK_*` jusqu'au renommage en `OIDC_*`.
+l'émetteur attendu. Le fournisseur d'identité est **Auth0**, dont le tenant répond sur le domaine
+personnalisé `auth.welylabs.app` : émetteur `https://auth.welylabs.app/`, clés publiques sous
+`/.well-known/jwks.json`.
 
 ```properties
 # récupération des clés : https://<tenant>/.well-known/jwks.json
-spring.security.oauth2.resourceserver.jwt.jwk-set-uri=${KEYCLOAK_INTERNAL_JWK_SET_URI}
+spring.security.oauth2.resourceserver.jwt.jwk-set-uri=${OIDC_JWK_SET_URI}
 # validation de l'émetteur : https://<tenant>/, slash final compris — Spring compare à l'identique
-spring.security.oauth2.resourceserver.jwt.issuer-uri=${KEYCLOAK_ISSUER_URI}
+spring.security.oauth2.resourceserver.jwt.issuer-uri=${OIDC_ISSUER_URI}
 ```
 
-La dissociation date de Keycloak, dont les clés se lisaient par un service interne au cluster
-alors que l'`iss` portait l'URL publique ; elle reste utile à tout fournisseur placé derrière un
-ingress.
+Les deux restent dissociés : l'émetteur doit égaler l'`iss` du jeton à l'identique, alors que
+les clés peuvent se lire à une autre adresse — utile à tout fournisseur placé derrière un ingress.
 
 Le décodeur est composé explicitement pour valider à la fois l'émetteur et l'horodatage :
 
@@ -197,8 +197,8 @@ et `/rsocket`.
 | `CHAT_RSOCKET_URL` | URL WebSocket de wely-chat (`ws://…`) |
 | `EVENTS_API_URL` | URL interne de wely-events |
 | `CORS_ALLOWED_ORIGIN` | Origine autorisée (défaut : `https://web.welylabs.app`) |
-| `KEYCLOAK_ISSUER_URI` | Issuer Auth0 (`https://<tenant>/`, slash final) — nom hérité de Keycloak |
-| `KEYCLOAK_INTERNAL_JWK_SET_URI` | JWKS Auth0 (`https://<tenant>/.well-known/jwks.json`) — nom hérité |
+| `OIDC_ISSUER_URI` | Issuer Auth0 (`https://<tenant>/`, slash final) |
+| `OIDC_JWK_SET_URI` | JWKS Auth0 (`https://<tenant>/.well-known/jwks.json`) |
 | `REDIS_HOST` / `REDIS_PORT` | Compteurs de quota (défaut : `localhost:6379`) |
 | `RATE_LIMIT_REPLENISH_RATE` | Débit soutenu par appelant, en req/s (défaut : 20) |
 | `RATE_LIMIT_BURST_CAPACITY` | Rafale autorisée (défaut : 40) |
